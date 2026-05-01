@@ -1,0 +1,157 @@
+/* Dogology Learning Admin Styles */
+
+/* Wrappers */
+.dogology-learning-wrap {
+    max-width: 1200px;
+    margin: 20px 0;
+}
+
+/* Cards */
+.dl-card {
+    background: #fff;
+    border: 1px solid #dcdcde;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, .04);
+    border-radius: 8px;
+    padding: 0;
+    margin-bottom: 20px;
+    overflow: hidden;
+}
+
+.dl-card-header {
+    background: #f8f9fa;
+    border-bottom: 1px solid #dcdcde;
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.dl-card-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #1d2327;
+}
+
+.dl-card-body {
+    padding: 20px;
+}
+
+/* Forms */
+.dl-form-group {
+    margin-bottom: 15px;
+    padding: 0 20px;
+}
+
+.dl-form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #3c434a;
+}
+
+.dl-form-group input[type="text"],
+.dl-form-group select {
+    width: 100%;
+    max-width: 600px;
+}
+
+.dl-form-help {
+    font-size: 12px;
+    color: #646970;
+    margin-top: 5px;
+}
+
+/* Buttons */
+.dl-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: all 0.2s;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.dl-btn-primary {
+    background: #00AB8E;
+    color: #fff;
+    border-color: #00AB8E;
+}
+
+.dl-btn-primary:hover {
+    background: #00967d;
+    color: #fff;
+}
+
+.dl-btn-secondary {
+    background: #f0f0f1;
+    color: #2271b1;
+    border-color: #2271b1;
+}
+
+.dl-btn-secondary:hover {
+    background: #f6f7f7;
+    color: #135e96;
+}
+
+.dl-btn-danger {
+    background: #fff;
+    color: #d63638;
+    border-color: #d63638;
+}
+
+.dl-btn-danger:hover {
+    background: #fee;
+    color: #d63638;
+}
+
+.dl-btn-sm {
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+/* Table */
+.dl-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.dl-table th,
+.dl-table td {
+    padding: 15px 20px;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f1;
+}
+
+.dl-table th {
+    background: #fbfbfb;
+    font-weight: 600;
+    color: #646970;
+}
+
+.dl-table tr:last-child td {
+    border-bottom: none;
+}
+
+.dl-table tr:hover td {
+    background: #f8f9fa;
+}
+
+/* Badges */
+.dl-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.dl-badge-open {
+    background: #e5f6fd;
+    color: #0076BA;
+}

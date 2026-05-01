@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Local planning / notes / logs (kept local only)
+*.md
+log.md
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node / build artifacts
+node_modules/
+dist/
+.env
+.env.local
