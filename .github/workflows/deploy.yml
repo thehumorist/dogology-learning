@@ -1,0 +1,46 @@
+name: Deploy dogology-learning to production
+
+# Mirrors deploy pattern in dogology-mindmap and dogology-commerce.
+# Push to `main` triggers SFTP push to the production WordPress install.
+# Manual cache purge (WP Rocket + Cloudflare) still required after deploy.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stage deploy folder
+        run: |
+          mkdir -p ./deploy
+          rsync -av \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='deploy' \
+            --exclude='*.md' \
+            --exclude='log.md' \
+            --exclude='.DS_Store' \
+            --exclude='.env*' \
+            --exclude='.idea' \
+            --exclude='.vscode' \
+            --exclude='*.swp' \
+            --exclude='*.swo' \
+            --exclude='*.log' \
+            ./ ./deploy/
+
+      - name: SFTP push to production
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          server: ${{ secrets.SFTP_HOST }}
+          username: ${{ secrets.SFTP_USERNAME }}
+          password: ${{ secrets.SFTP_PASSWORD }}
+          local_path: ./deploy/*
+          remote_path: /www/domains/dogology.org/public_html/wp-content/plugins/dogology-learning
+          sftp_only: true
+          delete_remote_files: false
