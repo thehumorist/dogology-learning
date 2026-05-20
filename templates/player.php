@@ -364,6 +364,34 @@ $t = $trans[$current_lang];
         window.dogologyPendingPlay = false;
         window.dogologyPlayer = null;
         window.ytApiReady = false;
+        // Distinct from ytApiReady: true only once YT.Player has actually fired
+        // onReady, i.e. the postMessage channel is alive. ytApiReady alone means
+        // the iframe_api script ran; it doesn't mean the player is reachable.
+        window.dogologyApiReady = false;
+        window.dogologyAjaxUrl = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
+        window.dogologyDiagReported = {};
+
+        // Diagnostic beacon: fires at most once per event name so a stuck player
+        // can't spam the endpoint. sendBeacon survives page unload; keepalive
+        // fetch is the fallback for browsers without sendBeacon. Errors are
+        // swallowed because diagnostics must never be the thing that breaks
+        // playback.
+        window.dogologyReportDiag = function (evt, detail) {
+            if (!evt || window.dogologyDiagReported[evt]) return;
+            window.dogologyDiagReported[evt] = true;
+            try {
+                var fd = new FormData();
+                fd.append('action', 'dl_video_diag');
+                fd.append('evt', evt);
+                fd.append('detail', detail || '');
+                fd.append('ua', navigator.userAgent || '');
+                if (navigator.sendBeacon) {
+                    navigator.sendBeacon(window.dogologyAjaxUrl, fd);
+                } else {
+                    fetch(window.dogologyAjaxUrl, { method: 'POST', body: fd, keepalive: true });
+                }
+            } catch (err) { /* never break playback for a diagnostic */ }
+        };
 
         // Early stub: catches the YouTube API callback even if the main script hasn't loaded yet
         window.onYouTubeIframeAPIReady = function () {
@@ -450,6 +478,17 @@ $t = $trans[$current_lang];
             width: 100%;
             aspect-ratio: 16/9;
             overflow: hidden;
+        }
+
+        /* Aspect-ratio fallback for Samsung Internet <14 and older Android WebViews
+           that don't support `aspect-ratio`. Without this the wrapper renders 0px
+           tall and the iframe is invisible. Children are already absolutely
+           positioned, so the padding-bottom trick works cleanly. */
+        @supports not (aspect-ratio: 16/9) {
+            #video-wrapper {
+                height: 0;
+                padding-bottom: 56.25%;
+            }
         }
 
         #player-container,
@@ -1181,7 +1220,8 @@ $t = $trans[$current_lang];
                         style="position: absolute; top:0; left:0; width:100%; height:100%;">
                         <iframe id="video-player" src="<?php echo esc_url(Dogology_Helpers::get_embed_url($video_url)); ?>"
                             class="absolute inset-0 w-full h-full pointer-events-none" frameborder="0"
-                            allow="autoplay; fullscreen; picture-in-picture" allowfullscreen fetchpriority="high"
+                            allow="autoplay; fullscreen; picture-in-picture; encrypted-media; gyroscope; accelerometer"
+                            allowfullscreen playsinline webkit-playsinline fetchpriority="high"
                             loading="eager" data-no-lazy="1" data-skip-lazy="1" style="width:100%; height:100%;"></iframe>
                     </div>
 
@@ -1628,6 +1668,38 @@ $t = $trans[$current_lang];
     </main>
 
     <script>
+        // bfcache safety: Samsung Internet and Safari restore the entire page state
+        // on back-navigation. The restored snapshot keeps the JS reference to the
+        // YT.Player object but the underlying postMessage channel is dead, so taps
+        // silently fail. The object-reference check is unreliable here (it survives
+        // bfcache regardless of channel health), so we always force a fresh load on
+        // bfcache restore. Costs nothing in playback position — the player has no
+        // resume-from-position UX elsewhere in the plugin.
+        window.addEventListener('pageshow', function (e) {
+            if (e.persisted) {
+                location.reload();
+            }
+        });
+
+        // Diagnostic watchdog: if 8s after the player script runs the YT API
+        // still hasn't fired onReady, beacon the failure so we can correlate
+        // "video didn't play" reports with concrete browser conditions. 8s is
+        // long enough that genuinely slow networks usually complete in window;
+        // shorter risks false positives on flaky 3G. Instrumentation only —
+        // doesn't change user-visible behavior.
+        (function () {
+            var iframe = document.getElementById('video-player');
+            if (!iframe || !iframe.src || iframe.src.indexOf('youtube.com') === -1) return;
+            setTimeout(function () {
+                if (!window.dogologyApiReady) {
+                    window.dogologyReportDiag(
+                        'yt_api_no_onready',
+                        'ytApiReady=' + window.ytApiReady + ',player=' + !!window.dogologyPlayer
+                    );
+                }
+            }, 8000);
+        })();
+
         // YouTube IFrame API Logic
         let player;
         let updateInterval;
@@ -1657,6 +1729,7 @@ $t = $trans[$current_lang];
         }
 
         function onPlayerReady() {
+            window.dogologyApiReady = true;
             startTracking();
             // If user clicked "Start Learning" before API was ready, play now
             if (window.dogologyPendingPlay) {
