@@ -673,11 +673,16 @@ $t = $trans[$current_lang];
             background: linear-gradient(to top, #0a0f14 0%, rgba(10, 15, 20, 0.95) 40%, transparent 100%);
         }
 
-        /* Keep the bottom mask visible for the entire playback. The original
-           design faded it after 3s on the assumption modestbranding was killing
-           YT's bottom chrome; YT removed that flag in Aug 2023, so the mask now
-           has to do all the work. */
-        #video-wrapper.is-playing #video-logo-overlay {
+        /* Sync the bottom mask with YouTube's own watermark auto-hide pattern.
+           YT's bottom-right watermark appears on play start and on any tap or
+           hover, then auto-hides during steady idle playback. Our
+           `user-interacting` class follows that exact rhythm — added on initial
+           play and on every interaction by showControls() / resetHideTimeout(),
+           removed by the 3s idle timer. Mirroring the mask to that class means
+           the dark strip appears when YT chrome appears and gets out of the
+           way when it doesn't. Pause/end states have their own full-screen
+           overlays covering this area, so no need to gate on those. */
+        #video-wrapper.user-interacting #video-logo-overlay {
             opacity: 1 !important;
         }
 
