@@ -45,6 +45,12 @@ if (is_admin()) {
     require_once DOGOLOGY_LEARNING_PATH . 'admin/class-builder-ajax.php';
 }
 
+// CLI-only — registers the `wp dl-diag` command. Self-guards on WP_CLI so
+// the file is harmless if accidentally required from a web request.
+if (defined('WP_CLI') && WP_CLI) {
+    require_once DOGOLOGY_LEARNING_PATH . 'includes/class-cli.php';
+}
+
 // Activation Hook
 register_activation_hook(__FILE__, array('Dogology_Learning_DB_Installer', 'install'));
 register_activation_hook(__FILE__, array('Dogology_Learning_Router', 'flush_rules')); // Helper if we add it to the class later
