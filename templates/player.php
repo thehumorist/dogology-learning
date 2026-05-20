@@ -633,20 +633,37 @@ $t = $trans[$current_lang];
             transition: opacity 0.5s ease;
         }
 
-        /* Top Bar Overlay: Now independent, hides with its own timer */
+        /* Top Bar Overlay: Now independent, hides with its own timer.
+           Background gradient is declared inline (not just via Tailwind
+           `bg-gradient-to-b from-black via-black/80 to-transparent` on the
+           element) so the mask paints on first frame even if Tailwind CDN
+           hasn't generated utilities yet. Position comes from the shared
+           absolute rule above. */
         #video-top-bar {
             opacity: 0 !important;
             transition: opacity 0.5s ease !important;
             pointer-events: none !important;
             z-index: 25;
+            background: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.8) 50%, transparent 100%);
         }
 
         #video-top-bar.show-bar {
             opacity: 1 !important;
         }
 
-        /* YouTube Logo Shield: Bottom Full Width */
+        /* YouTube Logo Shield: Bottom Full Width.
+           Position/size are declared here (not just via Tailwind utility classes
+           on the element) because YouTube's bottom-right watermark renders
+           unconditionally now that modestbranding is deprecated, and the host
+           theme no longer pre-ships Tailwind utilities — the CDN runtime can
+           race the iframe paint on slow phones, leaving the mask without a
+           rectangle. Inline declaration removes that dependency. */
         #video-logo-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 6rem;
             opacity: 0 !important;
             transition: opacity 0.5s ease !important;
             pointer-events: none !important;
@@ -654,6 +671,14 @@ $t = $trans[$current_lang];
             /* Behind Custom Controls (20) but above Iframe */
             /* Solid bottom fade up */
             background: linear-gradient(to top, #0a0f14 0%, rgba(10, 15, 20, 0.95) 40%, transparent 100%);
+        }
+
+        /* Keep the bottom mask visible for the entire playback. The original
+           design faded it after 3s on the assumption modestbranding was killing
+           YT's bottom chrome; YT removed that flag in Aug 2023, so the mask now
+           has to do all the work. */
+        #video-wrapper.is-playing #video-logo-overlay {
+            opacity: 1 !important;
         }
 
         /* Pause Overlay: Hides "More Videos" suggestions at the bottom */
@@ -1827,13 +1852,14 @@ $t = $trans[$current_lang];
                     hideControls();
                     wrapper.classList.add('hide-cursor');
 
-                    // Force hide top bar & logo shield if it was in its "initial show" phase
+                    // Force hide top bar if it was in its "initial show" phase.
+                    // Do NOT fade the logo shield here — its mask has to persist
+                    // for the entire playback now that YT's bottom watermark
+                    // renders unconditionally. CSS .is-playing rule handles it.
                     const topBar = document.getElementById('video-top-bar');
-                    const logoShield = document.getElementById('video-logo-overlay');
 
                     if (topBar && topBar.style.opacity === '1') {
                         topBar.style.setProperty('opacity', '0', 'important');
-                        if (logoShield) logoShield.style.setProperty('opacity', '0', 'important');
                         topBarShownOnce = true;
                     }
                 }
@@ -1849,17 +1875,17 @@ $t = $trans[$current_lang];
             if (topBarShownOnce || topBarTimeout) return; // Don't reset if already scheduled
 
             const topBar = document.getElementById('video-top-bar');
-            const logoShield = document.getElementById('video-logo-overlay');
 
             if (topBar) {
                 topBar.style.setProperty('opacity', '1', 'important');
-                if (logoShield) logoShield.style.setProperty('opacity', '1', 'important');
 
-                // YouTube title bar hides after ~3-5 seconds of play or inactivity
+                // YouTube title bar hides after ~3-5 seconds of play or inactivity.
+                // The logo shield is intentionally NOT touched here — its visibility
+                // is driven by the .is-playing CSS rule so the bottom YT watermark
+                // stays masked for the entire playback.
                 topBarTimeout = setTimeout(() => {
                     if (player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING) {
                         topBar.style.setProperty('opacity', '0', 'important');
-                        if (logoShield) logoShield.style.setProperty('opacity', '0', 'important');
                         topBarShownOnce = true; // Mark as shown forever
                     }
                     topBarTimeout = null; // Clear handler reference
