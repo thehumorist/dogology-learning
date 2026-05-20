@@ -1640,13 +1640,15 @@ $t = $trans[$current_lang];
     </main>
 
     <script>
-        // bfcache safety: Samsung Internet and Safari aggressively restore the entire
-        // page state on back-navigation. The restored snapshot contains a dead
-        // postMessage channel — the YT.Player object references nothing, so taps
-        // silently fail. Force a fresh load only when the player binding is actually
-        // dead, so bfcache can still serve us cleanly when the player survived.
+        // bfcache safety: Samsung Internet and Safari restore the entire page state
+        // on back-navigation. The restored snapshot keeps the JS reference to the
+        // YT.Player object but the underlying postMessage channel is dead, so taps
+        // silently fail. The object-reference check is unreliable here (it survives
+        // bfcache regardless of channel health), so we always force a fresh load on
+        // bfcache restore. Costs nothing in playback position — the player has no
+        // resume-from-position UX elsewhere in the plugin.
         window.addEventListener('pageshow', function (e) {
-            if (e.persisted && !window.dogologyPlayer) {
+            if (e.persisted) {
                 location.reload();
             }
         });
