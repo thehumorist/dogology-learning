@@ -17,6 +17,13 @@ class Dogology_Learning_Router
         // Define WP Rocket bypass constants EARLY (before wp_enqueue_scripts)
         add_action('wp', array($this, 'disable_rocket_on_learning_pages'), 1);
 
+        // Diagnostic beacon: the player posts here when it detects a playback
+        // failure mode (API never reported ready, src-swap fallback fired, etc).
+        // Logged-in case is unused in practice (students aren't WP users) but
+        // registered for completeness so admin/preview sessions don't 0-byte.
+        add_action('wp_ajax_dl_video_diag', array($this, 'handle_video_diag'));
+        add_action('wp_ajax_nopriv_dl_video_diag', array($this, 'handle_video_diag'));
+
         // Auto-flush on first load if needed
         add_action('init', function () {
             if (!get_option('dogology_learning_permalinks_flushed_v4')) {
@@ -107,6 +114,15 @@ class Dogology_Learning_Router
         }
         nocache_headers();
 
+        // nocache_headers() emits no-cache + must-revalidate but NOT no-store. Some
+        // intermediate proxies and bfcache implementations treat the difference as
+        // license to serve a stale snapshot anyway, which on the player route shows
+        // up as a frozen iframe with a dead postMessage channel. no-store explicitly
+        // forbids storage end-to-end.
+        if (!headers_sent()) {
+            header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        }
+
         // Clickjacking protection on auth surfaces (login, dashboard, player, logout).
         // These pages should never be embedded in a third-party frame.
         if (!headers_sent()) {
@@ -148,5 +164,56 @@ class Dogology_Learning_Router
         $router = new self();
         $router->add_rewrite_rules();
         flush_rewrite_rules();
+    }
+
+    /**
+     * Diagnostic Beacon Handler
+     *
+     * Receives short event reports from the player when it detects playback
+     * failure modes. Stores the last 200 events in an option so we can see
+     * whether the mobile-playback fixes are landing on real devices without
+     * standing up real analytics.
+     *
+     * No nonce: this is an unauthenticated diagnostic endpoint by design (the
+     * player needs to report even when the user isn't logged in, and beacon
+     * requests can't easily carry custom headers). The evt allowlist and the
+     * fixed-size ring buffer cap spam impact.
+     */
+    public function handle_video_diag()
+    {
+        $allowed_evts = array(
+            'yt_api_no_onready',
+            'video_src_swap',
+            'play_no_state_change',
+            'api_never_ready_after_click',
+        );
+
+        $evt = isset($_POST['evt']) ? sanitize_key(wp_unslash($_POST['evt'])) : '';
+        if (!in_array($evt, $allowed_evts, true)) {
+            wp_die('', '', array('response' => 400));
+        }
+
+        $detail = isset($_POST['detail']) ? sanitize_text_field(wp_unslash($_POST['detail'])) : '';
+        $ua = isset($_POST['ua']) ? sanitize_text_field(wp_unslash($_POST['ua'])) : '';
+
+        $entry = array(
+            'ts' => time(),
+            'evt' => $evt,
+            'detail' => substr($detail, 0, 256),
+            'ua' => substr($ua, 0, 256),
+        );
+
+        $log = get_option('dogology_learning_video_diag', array());
+        if (!is_array($log)) {
+            $log = array();
+        }
+        $log[] = $entry;
+        if (count($log) > 200) {
+            $log = array_slice($log, -200);
+        }
+        // autoload=false: only read during triage, no need on every request.
+        update_option('dogology_learning_video_diag', $log, false);
+
+        wp_die('', '', array('response' => 204));
     }
 }
