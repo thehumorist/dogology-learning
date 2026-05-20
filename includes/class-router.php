@@ -107,6 +107,15 @@ class Dogology_Learning_Router
         }
         nocache_headers();
 
+        // nocache_headers() emits no-cache + must-revalidate but NOT no-store. Some
+        // intermediate proxies and bfcache implementations treat the difference as
+        // license to serve a stale snapshot anyway, which on the player route shows
+        // up as a frozen iframe with a dead postMessage channel. no-store explicitly
+        // forbids storage end-to-end.
+        if (!headers_sent()) {
+            header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        }
+
         // Clickjacking protection on auth surfaces (login, dashboard, player, logout).
         // These pages should never be embedded in a third-party frame.
         if (!headers_sent()) {

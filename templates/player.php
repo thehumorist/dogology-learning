@@ -452,6 +452,17 @@ $t = $trans[$current_lang];
             overflow: hidden;
         }
 
+        /* Aspect-ratio fallback for Samsung Internet <14 and older Android WebViews
+           that don't support `aspect-ratio`. Without this the wrapper renders 0px
+           tall and the iframe is invisible. Children are already absolutely
+           positioned, so the padding-bottom trick works cleanly. */
+        @supports not (aspect-ratio: 16/9) {
+            #video-wrapper {
+                height: 0;
+                padding-bottom: 56.25%;
+            }
+        }
+
         #player-container,
         #video-poster,
         #video-overlay,
@@ -1181,7 +1192,8 @@ $t = $trans[$current_lang];
                         style="position: absolute; top:0; left:0; width:100%; height:100%;">
                         <iframe id="video-player" src="<?php echo esc_url(Dogology_Helpers::get_embed_url($video_url)); ?>"
                             class="absolute inset-0 w-full h-full pointer-events-none" frameborder="0"
-                            allow="autoplay; fullscreen; picture-in-picture" allowfullscreen fetchpriority="high"
+                            allow="autoplay; fullscreen; picture-in-picture; encrypted-media; gyroscope; accelerometer"
+                            allowfullscreen playsinline webkit-playsinline fetchpriority="high"
                             loading="eager" data-no-lazy="1" data-skip-lazy="1" style="width:100%; height:100%;"></iframe>
                     </div>
 
@@ -1628,6 +1640,17 @@ $t = $trans[$current_lang];
     </main>
 
     <script>
+        // bfcache safety: Samsung Internet and Safari aggressively restore the entire
+        // page state on back-navigation. The restored snapshot contains a dead
+        // postMessage channel — the YT.Player object references nothing, so taps
+        // silently fail. Force a fresh load only when the player binding is actually
+        // dead, so bfcache can still serve us cleanly when the player survived.
+        window.addEventListener('pageshow', function (e) {
+            if (e.persisted && !window.dogologyPlayer) {
+                location.reload();
+            }
+        });
+
         // YouTube IFrame API Logic
         let player;
         let updateInterval;
