@@ -45,6 +45,16 @@ class Dogology_Learning_Admin_Menu
             array($this, 'render_courses_page')
         );
 
+        // Submenu: Logins (browser / in-app webview diagnostics)
+        add_submenu_page(
+            'dogology-learning',
+            'Logins',
+            'Logins',
+            'manage_options',
+            'dogology-learning-logins',
+            array($this, 'render_logins_page')
+        );
+
         // Modules + Lessons: hidden from menu but reachable by direct URL as a fallback
         // during the builder deprecation window. Remove these entirely in the next release.
         add_submenu_page(
@@ -104,5 +114,10 @@ class Dogology_Learning_Admin_Menu
     {
         // Simple Settings View inline or include
         require_once DOGOLOGY_LEARNING_PATH . 'admin/views/settings.php';
+    }
+
+    public function render_logins_page()
+    {
+        require_once DOGOLOGY_LEARNING_PATH . 'admin/views/logins.php';
     }
 }
