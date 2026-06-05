@@ -13,7 +13,7 @@ class Dogology_Helpers
      * Get Embed URL
      * Converts standard YouTube/Vimeo URLs to embeddable formats
      */
-    public static function get_embed_url($url)
+    public static function get_embed_url($url, $native_controls = false)
     {
         if (empty($url))
             return '';
@@ -23,7 +23,13 @@ class Dogology_Helpers
             $video_id = $matches[2];
             // playsinline=1 keeps iOS Safari from force-fullscreening on play, which
             // some older Samsung/Android WebViews also need to initialize cleanly.
-            $params = 'controls=0&enablejsapi=1&rel=0&modestbranding=1&showinfo=0&playsinline=1';
+            // controls: normally 0 because we render our own overlay UI. When
+            // $native_controls is true (Samsung Internet fallback — our overlay
+            // glitches there) we use controls=1 so YouTube's own player UI drives
+            // playback. enablejsapi stays on either way so onStateChange still
+            // fires for lesson-completion tracking.
+            $controls = $native_controls ? '1' : '0';
+            $params = "controls={$controls}&enablejsapi=1&rel=0&modestbranding=1&showinfo=0&playsinline=1";
 
             // Only advertise origin when home_url()'s host matches the actual request
             // host. Mismatches (reverse proxy, www-vs-apex, http-vs-https behind SSL

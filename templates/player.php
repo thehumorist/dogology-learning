@@ -924,17 +924,37 @@ $t = $trans[$current_lang];
         }
 
         <?php if ($_dl_is_samsung): ?>
-        /* Samsung Internet: disable all overlays.
-           Samsung's compositing of position:absolute children inside an iframe
-           container causes visual glitches with our overlay stack. Since the
-           overlays are cosmetic (logo/branding shields), disabling them entirely
-           is safer than trying to patch compositing quirks per-version. */
+        /* Samsung Internet fallback: hand playback to YouTube's native iframe UI.
+           Samsung's compositing of our absolutely-positioned overlay stack inside
+           the iframe container glitches, so instead of patching it we step out of
+           the way entirely: strip ALL of our custom chrome and let the iframe's
+           own controls drive playback (the embed is loaded with controls=1 and
+           the iframe gets pointer-events back below). This includes the
+           interactive layers (#video-click-layer, #custom-controls) — not just
+           the cosmetic masks — because they sit above the iframe and would keep
+           intercepting taps. Lesson-completion tracking still works: the YT JS
+           API (enablejsapi=1) reports onStateChange regardless of who drives.
+           Trade-off: Samsung users lose our branded poster, pause card, and the
+           in-player "Next lesson" CTA (the end overlay) — they navigate via the
+           sidebar instead. */
+        #video-wrapper.samsung-browser #video-poster,
+        #video-wrapper.samsung-browser #video-click-layer,
+        #video-wrapper.samsung-browser #video-dim-layer,
         #video-wrapper.samsung-browser #video-overlay,
-        #video-wrapper.samsung-browser #video-logo-overlay,
+        #video-wrapper.samsung-browser #custom-controls,
+        #video-wrapper.samsung-browser #timeline-container,
         #video-wrapper.samsung-browser #video-top-bar,
+        #video-wrapper.samsung-browser #video-logo-overlay,
         #video-wrapper.samsung-browser #video-pause-overlay,
-        #video-wrapper.samsung-browser #video-end-overlay {
+        #video-wrapper.samsung-browser #video-end-overlay,
+        #video-wrapper.samsung-browser #video-mini-overlay {
             display: none !important;
+        }
+
+        /* Give the iframe back its pointer events so taps reach YouTube. */
+        #video-wrapper.samsung-browser #video-player,
+        #video-wrapper.samsung-browser #player-container {
+            pointer-events: auto !important;
         }
         <?php endif; ?>
     </style>
@@ -1269,7 +1289,7 @@ $t = $trans[$current_lang];
                     style="aspect-ratio: 16/9;">
                     <div id="player-container" class="absolute inset-0 w-full h-full"
                         style="position: absolute; top:0; left:0; width:100%; height:100%;">
-                        <iframe id="video-player" src="<?php echo esc_url(Dogology_Helpers::get_embed_url($video_url)); ?>"
+                        <iframe id="video-player" src="<?php echo esc_url(Dogology_Helpers::get_embed_url($video_url, $_dl_is_samsung)); ?>"
                             class="absolute inset-0 w-full h-full pointer-events-none" frameborder="0"
                             allow="autoplay; fullscreen; picture-in-picture; encrypted-media; gyroscope; accelerometer"
                             allowfullscreen playsinline webkit-playsinline fetchpriority="high"
