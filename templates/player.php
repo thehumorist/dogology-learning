@@ -14,14 +14,25 @@ if (!$current_student) {
     exit;
 }
 
-// LINE's Android in-app browser can't reliably play the YouTube iframe. Detect it
-// server-side and offer a one-tap escape to the external browser (Chrome) via
-// LINE's magic openExternalBrowser=1 param. iOS LINE typically opens links in
-// Safari already, so we scope this to Android to match the actual culprit.
+// Browser-warning strip for environments where the YouTube iframe may not play.
+// Two at-risk environments, each with a DIFFERENT remedy:
+//   - LINE Android in-app browser → one-tap escape via LINE's openExternalBrowser=1
+//     param (only works inside the LINE app). iOS LINE opens Safari already, so
+//     Android-only.
+//   - Samsung Internet (a standalone browser, still under suspicion) → can't be
+//     auto-redirected, so we offer "copy the URL and open in Chrome".
+// A dismiss button lets a user who CAN play hide the strip; that dismissal is
+// beaconed as data (positive "playback works" signal) so we can quantify whether
+// Samsung Internet actually has the problem. Once dismissed, the dl_strip_ok
+// cookie suppresses the strip on that browser (no nag, no flash on reload).
 $_dl_ua              = $_SERVER['HTTP_USER_AGENT'] ?? '';
 $_dl_parsed          = Dogology_Helpers::parse_user_agent($_dl_ua);
 $_dl_is_line_android = ($_dl_parsed['label'] === 'LINE in-app') && (stripos($_dl_ua, 'Android') !== false);
-$_dl_external_url    = add_query_arg('openExternalBrowser', '1', home_url($_SERVER['REQUEST_URI'] ?? '/my-courses'));
+$_dl_is_samsung      = ($_dl_parsed['label'] === 'Samsung Internet');
+$_dl_strip_variant   = $_dl_is_line_android ? 'line_android' : ($_dl_is_samsung ? 'samsung' : '');
+$_dl_show_strip      = $_dl_strip_variant !== '' && empty($_COOKIE['dl_strip_ok']);
+$_dl_plain_url       = home_url($_SERVER['REQUEST_URI'] ?? '/my-courses');
+$_dl_external_url    = add_query_arg('openExternalBrowser', '1', $_dl_plain_url);
 
 // 2. Get Route Params
 // Cast explicitly — get_query_var returns whatever matched the rewrite regex, and
@@ -1239,13 +1250,68 @@ $t = $trans[$current_lang];
 
         <!-- MAIN PLAYER CONTENT -->
         <div id="player-content-wrapper" class="flex-1 flex flex-col bg-white relative transition-all duration-300">
-            <?php if ($_dl_is_line_android): ?>
-            <!-- LINE Android in-app browser: video playback warning + escape to external browser -->
-            <a href="<?php echo esc_url($_dl_external_url); ?>"
-                style="display:flex; align-items:center; justify-content:center; gap:8px; background:#FEF3C7; color:#92400E; padding:10px 14px; font-size:13px; line-height:1.4; font-weight:600; text-decoration:none; border-bottom:1px solid #FCD34D;">
-                <span>⚠️ วิดีโอเล่นไม่ได้? แตะที่นี่เพื่อเปิดในเบราว์เซอร์</span>
-                <span style="text-decoration:underline; white-space:nowrap;">เปิดเลย →</span>
-            </a>
+            <?php if ($_dl_show_strip): ?>
+            <!-- At-risk browser (LINE Android IAB / Samsung Internet): video playback warning. -->
+            <div id="dl-browser-strip" data-variant="<?php echo esc_attr($_dl_strip_variant); ?>"
+                style="display:flex; align-items:center; gap:10px; background:#FEF3C7; color:#92400E; padding:10px 14px; font-size:13px; line-height:1.45; border-bottom:1px solid #FCD34D;">
+                <span style="flex:1;">
+                    ⚠️ วิดีโอเล่นไม่ได้?
+                    <?php if ($_dl_is_line_android): ?>
+                        <a href="<?php echo esc_url($_dl_external_url); ?>"
+                            style="color:#92400E; font-weight:700; text-decoration:underline; white-space:nowrap;">แตะเพื่อเปิดในเบราว์เซอร์ →</a>
+                    <?php else: // Samsung Internet ?>
+                        <button type="button" id="dl-copy-url" data-url="<?php echo esc_attr($_dl_plain_url); ?>"
+                            style="background:none; border:none; padding:0; color:#92400E; font-weight:700; text-decoration:underline; cursor:pointer; font-size:13px;">คัดลอกลิงก์แล้วเปิดใน Chrome</button>
+                    <?php endif; ?>
+                </span>
+                <button type="button" id="dl-strip-dismiss"
+                    style="flex-shrink:0; background:rgba(146,64,14,0.1); border:1px solid rgba(146,64,14,0.25); border-radius:999px; padding:3px 10px; color:#92400E; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">เล่นได้ปกติ ✕</button>
+            </div>
+            <script>
+                (function () {
+                    var strip = document.getElementById('dl-browser-strip');
+                    if (!strip) return;
+                    var ajax = '<?php echo esc_url(admin_url('admin-ajax.php')); ?>';
+                    var variant = strip.getAttribute('data-variant') || '';
+
+                    // Beacon a player-diag event. Swallowed; never breaks the page.
+                    function beacon(evt) {
+                        try {
+                            var fd = new FormData();
+                            fd.append('action', 'dl_video_diag');
+                            fd.append('evt', evt);
+                            fd.append('detail', variant);
+                            fd.append('ua', navigator.userAgent || '');
+                            if (navigator.sendBeacon) { navigator.sendBeacon(ajax, fd); }
+                            else { fetch(ajax, { method: 'POST', body: fd, keepalive: true }); }
+                        } catch (e) { }
+                    }
+
+                    var copyBtn = document.getElementById('dl-copy-url');
+                    if (copyBtn) {
+                        copyBtn.addEventListener('click', function () {
+                            var url = copyBtn.getAttribute('data-url');
+                            var done = function () { copyBtn.textContent = 'คัดลอกแล้ว! เปิด Chrome แล้ววางลิงก์'; };
+                            if (navigator.clipboard && navigator.clipboard.writeText) {
+                                navigator.clipboard.writeText(url).then(done).catch(function () { window.prompt('คัดลอกลิงก์นี้:', url); });
+                            } else { window.prompt('คัดลอกลิงก์นี้:', url); }
+                            // Samsung user needed the escape hatch — negative "playback" signal.
+                            beacon('strip_copy');
+                        });
+                    }
+
+                    var dismiss = document.getElementById('dl-strip-dismiss');
+                    if (dismiss) {
+                        dismiss.addEventListener('click', function () {
+                            // Remember so it won't show again on this browser.
+                            document.cookie = 'dl_strip_ok=1; path=/; max-age=15552000; samesite=Lax';
+                            // Positive "playback works" signal for this browser.
+                            beacon('strip_dismissed');
+                            strip.style.display = 'none';
+                        });
+                    }
+                })();
+            </script>
             <?php endif; ?>
             <!-- Sidebar Toggle Button (Floating) -->
             <button id="btn-expand-sidebar" onclick="toggleDesktopSidebar()"

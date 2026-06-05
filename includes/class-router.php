@@ -191,6 +191,11 @@ class Dogology_Learning_Router
             'video_src_swap',
             'play_no_state_change',
             'api_never_ready_after_click',
+            // Browser-warning strip (player.php): user self-reports playback state.
+            // strip_dismissed = "video plays fine" (positive); strip_copy = Samsung
+            // user used the copy-to-Chrome escape (negative). detail = variant.
+            'strip_dismissed',
+            'strip_copy',
         );
 
         $evt = isset($_POST['evt']) ? sanitize_key(wp_unslash($_POST['evt'])) : '';
