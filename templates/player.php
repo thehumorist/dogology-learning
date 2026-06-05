@@ -14,11 +14,14 @@ if (!$current_student) {
     exit;
 }
 
-// Detect Samsung Internet. Their browser applies unusual compositing to
-// position:absolute overlays inside an iframe container, causing visual
-// glitches with our overlay stack. Disable all overlays for Samsung Internet.
-$_dl_ua_parsed  = Dogology_Helpers::parse_user_agent($_SERVER['HTTP_USER_AGENT'] ?? '');
-$_dl_is_samsung = ($_dl_ua_parsed['label'] === 'Samsung Internet');
+// LINE's Android in-app browser can't reliably play the YouTube iframe. Detect it
+// server-side and offer a one-tap escape to the external browser (Chrome) via
+// LINE's magic openExternalBrowser=1 param. iOS LINE typically opens links in
+// Safari already, so we scope this to Android to match the actual culprit.
+$_dl_ua              = $_SERVER['HTTP_USER_AGENT'] ?? '';
+$_dl_parsed          = Dogology_Helpers::parse_user_agent($_dl_ua);
+$_dl_is_line_android = ($_dl_parsed['label'] === 'LINE in-app') && (stripos($_dl_ua, 'Android') !== false);
+$_dl_external_url    = add_query_arg('openExternalBrowser', '1', home_url($_SERVER['REQUEST_URI'] ?? '/my-courses'));
 
 // 2. Get Route Params
 // Cast explicitly — get_query_var returns whatever matched the rewrite regex, and
@@ -923,40 +926,6 @@ $t = $trans[$current_lang];
             border: none !important;
         }
 
-        <?php if ($_dl_is_samsung): ?>
-        /* Samsung Internet fallback: hand playback to YouTube's native iframe UI.
-           Samsung's compositing of our absolutely-positioned overlay stack inside
-           the iframe container glitches, so instead of patching it we step out of
-           the way entirely: strip ALL of our custom chrome and let the iframe's
-           own controls drive playback (the embed is loaded with controls=1 and
-           the iframe gets pointer-events back below). This includes the
-           interactive layers (#video-click-layer, #custom-controls) — not just
-           the cosmetic masks — because they sit above the iframe and would keep
-           intercepting taps. Lesson-completion tracking still works: the YT JS
-           API (enablejsapi=1) reports onStateChange regardless of who drives.
-           Trade-off: Samsung users lose our branded poster, pause card, and the
-           in-player "Next lesson" CTA (the end overlay) — they navigate via the
-           sidebar instead. */
-        #video-wrapper.samsung-browser #video-poster,
-        #video-wrapper.samsung-browser #video-click-layer,
-        #video-wrapper.samsung-browser #video-dim-layer,
-        #video-wrapper.samsung-browser #video-overlay,
-        #video-wrapper.samsung-browser #custom-controls,
-        #video-wrapper.samsung-browser #timeline-container,
-        #video-wrapper.samsung-browser #video-top-bar,
-        #video-wrapper.samsung-browser #video-logo-overlay,
-        #video-wrapper.samsung-browser #video-pause-overlay,
-        #video-wrapper.samsung-browser #video-end-overlay,
-        #video-wrapper.samsung-browser #video-mini-overlay {
-            display: none !important;
-        }
-
-        /* Give the iframe back its pointer events so taps reach YouTube. */
-        #video-wrapper.samsung-browser #video-player,
-        #video-wrapper.samsung-browser #player-container {
-            pointer-events: auto !important;
-        }
-        <?php endif; ?>
     </style>
     <!-- Dogology Learning v<?php echo DOGOLOGY_LEARNING_VERSION; ?> -->
     <script async data-no-minify="1" data-no-optimize="1" data-no-defer="1"
@@ -1270,6 +1239,14 @@ $t = $trans[$current_lang];
 
         <!-- MAIN PLAYER CONTENT -->
         <div id="player-content-wrapper" class="flex-1 flex flex-col bg-white relative transition-all duration-300">
+            <?php if ($_dl_is_line_android): ?>
+            <!-- LINE Android in-app browser: video playback warning + escape to external browser -->
+            <a href="<?php echo esc_url($_dl_external_url); ?>"
+                style="display:flex; align-items:center; justify-content:center; gap:8px; background:#FEF3C7; color:#92400E; padding:10px 14px; font-size:13px; line-height:1.4; font-weight:600; text-decoration:none; border-bottom:1px solid #FCD34D;">
+                <span>⚠️ วิดีโอเล่นไม่ได้? แตะที่นี่เพื่อเปิดในเบราว์เซอร์</span>
+                <span style="text-decoration:underline; white-space:nowrap;">เปิดเลย →</span>
+            </a>
+            <?php endif; ?>
             <!-- Sidebar Toggle Button (Floating) -->
             <button id="btn-expand-sidebar" onclick="toggleDesktopSidebar()"
                 class="hidden fixed left-0 top-24 z-[100] bg-white shadow-md border border-gray-100 rounded-r-lg p-2 hover:bg-gray-50 text-gray-400 hover:text-primary transition items-center gap-2 group"
@@ -1285,11 +1262,11 @@ $t = $trans[$current_lang];
             <!-- Video Container -->
             <?php if ($video_url): ?>
                 <div id="video-wrapper"
-                    class="aspect-video bg-black flex items-center justify-center text-white relative group overflow-hidden<?php echo $_dl_is_samsung ? ' samsung-browser' : ''; ?>"
+                    class="aspect-video bg-black flex items-center justify-center text-white relative group overflow-hidden"
                     style="aspect-ratio: 16/9;">
                     <div id="player-container" class="absolute inset-0 w-full h-full"
                         style="position: absolute; top:0; left:0; width:100%; height:100%;">
-                        <iframe id="video-player" src="<?php echo esc_url(Dogology_Helpers::get_embed_url($video_url, $_dl_is_samsung)); ?>"
+                        <iframe id="video-player" src="<?php echo esc_url(Dogology_Helpers::get_embed_url($video_url)); ?>"
                             class="absolute inset-0 w-full h-full pointer-events-none" frameborder="0"
                             allow="autoplay; fullscreen; picture-in-picture; encrypted-media; gyroscope; accelerometer"
                             allowfullscreen playsinline webkit-playsinline fetchpriority="high"
