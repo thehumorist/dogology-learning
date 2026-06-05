@@ -176,7 +176,16 @@ class Dogology_Learning_Logins_CLI
      * : Filter to a single student (dogology_users.id).
      *
      * [--inapp]
-     * : Show only in-app webview logins (LINE/Facebook/Instagram/TikTok/WebView).
+     * : Show only in-app webview events (LINE/Facebook/Instagram/TikTok/WebView).
+     *
+     * [--type=<type>]
+     * : Filter by event type. 'session' = browsing a lesson/video page,
+     *   'login' = the login moment.
+     * ---
+     * options:
+     *   - session
+     *   - login
+     * ---
      *
      * [--limit=<limit>]
      * : Max rows to show.
@@ -198,6 +207,7 @@ class Dogology_Learning_Logins_CLI
      * ## EXAMPLES
      *
      *     wp dl-logins list
+     *     wp dl-logins list --type=session --inapp
      *     wp dl-logins list --user=42
      *     wp dl-logins list --inapp --limit=100
      *
@@ -216,13 +226,17 @@ class Dogology_Learning_Logins_CLI
             $where[] = 'l.user_id = %d';
             $params[] = (int) $assoc_args['user'];
         }
+        if (isset($assoc_args['type'])) {
+            $where[] = 'l.event_type = %s';
+            $params[] = (string) $assoc_args['type'];
+        }
         if (isset($assoc_args['inapp'])) {
             $where[] = 'l.is_inapp = 1';
         }
         $where_sql = implode(' AND ', $where);
 
         $u = $wpdb->prefix . 'dogology_users';
-        $sql = "SELECT l.logged_in_at, l.user_id, u.display_name, u.email,
+        $sql = "SELECT l.logged_in_at, l.event_type, l.user_id, u.display_name, u.email,
                        l.browser, l.is_inapp, l.ip, l.ua
                 FROM $t l LEFT JOIN $u u ON u.id = l.user_id
                 WHERE $where_sql
@@ -232,13 +246,14 @@ class Dogology_Learning_Logins_CLI
         $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
 
         if (empty($rows)) {
-            WP_CLI::log('No login events recorded yet.');
+            WP_CLI::log('No events recorded yet.');
             return;
         }
 
         $rows = array_map(function ($r) {
             return array(
                 'logged_in_at' => $r['logged_in_at'],
+                'type'         => $r['event_type'],
                 'user_id'      => $r['user_id'],
                 'name'         => $r['display_name'],
                 'email'        => $r['email'],
@@ -248,21 +263,30 @@ class Dogology_Learning_Logins_CLI
             );
         }, $rows);
 
-        WP_CLI\Utils\format_items($format, $rows, array('logged_in_at', 'user_id', 'name', 'email', 'browser', 'in_app', 'ip'));
+        WP_CLI\Utils\format_items($format, $rows, array('logged_in_at', 'type', 'user_id', 'name', 'email', 'browser', 'in_app', 'ip'));
     }
 
     /**
-     * Browser distribution across all recorded logins.
+     * Browser distribution across recorded events.
      *
      * ## OPTIONS
      *
      * [--days=<days>]
-     * : Restrict to logins within the last N days.
+     * : Restrict to events within the last N days.
+     *
+     * [--type=<type>]
+     * : Filter by event type ('session' = browsing, 'login' = login moment).
+     *   Omit to include both.
+     * ---
+     * options:
+     *   - session
+     *   - login
+     * ---
      *
      * ## EXAMPLES
      *
      *     wp dl-logins browsers
-     *     wp dl-logins browsers --days=30
+     *     wp dl-logins browsers --type=session --days=30
      *
      * @when after_wp_load
      */
@@ -271,21 +295,26 @@ class Dogology_Learning_Logins_CLI
         global $wpdb;
         $t = $this->table();
 
-        $where = '1=1';
+        $where = array('1=1');
         $params = array();
         if (isset($assoc_args['days'])) {
-            $where = 'logged_in_at >= DATE_SUB(NOW(), INTERVAL %d DAY)';
+            $where[] = 'logged_in_at >= DATE_SUB(NOW(), INTERVAL %d DAY)';
             $params[] = (int) $assoc_args['days'];
         }
+        if (isset($assoc_args['type'])) {
+            $where[] = 'event_type = %s';
+            $params[] = (string) $assoc_args['type'];
+        }
+        $where_sql = implode(' AND ', $where);
 
         $sql = "SELECT browser, is_inapp, COUNT(*) AS n
-                FROM $t WHERE $where
+                FROM $t WHERE $where_sql
                 GROUP BY browser, is_inapp ORDER BY n DESC";
         $rows = $params ? $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A)
                         : $wpdb->get_results($sql, ARRAY_A);
 
         if (empty($rows)) {
-            WP_CLI::log('No login events recorded yet.');
+            WP_CLI::log('No events recorded yet.');
             return;
         }
 

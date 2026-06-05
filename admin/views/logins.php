@@ -33,12 +33,23 @@ $days       = $valid_days[$days_opt];
 $inapp_only = !empty($_GET['inapp']);
 $search     = isset($_GET['s']) ? sanitize_text_field(wp_unslash($_GET['s'])) : '';
 
+// Event type: all | session (browsing) | login. Default to browsing sessions —
+// that's the browser that matters for the video problem (where the player runs).
+$type = isset($_GET['type']) ? sanitize_key($_GET['type']) : 'session';
+if (!in_array($type, array('all', 'session', 'login'), true)) {
+    $type = 'session';
+}
+
 // Shared WHERE builder.
 $where  = array('1=1');
 $params = array();
 if ($days > 0) {
     $where[]  = 'l.logged_in_at >= DATE_SUB(NOW(), INTERVAL %d DAY)';
     $params[] = $days;
+}
+if ($type !== 'all') {
+    $where[]  = 'l.event_type = %s';
+    $params[] = $type;
 }
 if ($inapp_only) {
     $where[] = 'l.is_inapp = 1';
@@ -69,6 +80,10 @@ if ($table_exists) {
     if ($days > 0) {
         $dist_where[]  = 'l.logged_in_at >= DATE_SUB(NOW(), INTERVAL %d DAY)';
         $dist_params[] = $days;
+    }
+    if ($type !== 'all') {
+        $dist_where[]  = 'l.event_type = %s';
+        $dist_params[] = $type;
     }
     if ($search !== '') {
         $dist_where[]  = '(u.display_name LIKE %s OR u.email LIKE %s)';
@@ -102,7 +117,7 @@ if ($table_exists) {
     $total_pages = (int) ceil($total_rows / $per_page);
     $offset = ($page - 1) * $per_page;
 
-    $list_sql = "SELECT l.logged_in_at, l.user_id, l.browser, l.is_inapp, l.ip, l.ua,
+    $list_sql = "SELECT l.logged_in_at, l.user_id, l.event_type, l.browser, l.is_inapp, l.ip, l.ua,
                         u.display_name, u.email
                  FROM $t_logins l LEFT JOIN $t_users u ON u.id = l.user_id
                  WHERE $where_sql
@@ -115,7 +130,7 @@ if ($table_exists) {
 $inapp_pct = $total_logins > 0 ? round($inapp_logins * 100 / $total_logins, 1) : 0;
 
 // Helper for building filter URLs while preserving other params.
-$base_args = array('page' => 'dogology-learning-logins');
+$base_args = array('page' => 'dogology-learning-logins', 'type' => $type);
 if ($search !== '') {
     $base_args['s'] = $search;
 }
@@ -139,14 +154,38 @@ if ($search !== '') {
     <?php endif; ?>
 
     <p class="description" style="margin-bottom:16px;">
-        Each successful student login records its browser environment. <strong>In-app</strong>
-        means an embedded webview (LINE, Facebook, Instagram, TikTok) — the environment
-        where the YouTube video player most often fails. Cross-reference in-app users
-        against playback failures (<code>wp dl-diag list</code>).
+        <strong>Browsing</strong> = the browser a student actually loads lesson/video pages in
+        (deduped to once per browser per day) — this is the one that matters for playback.
+        <strong>Logins</strong> = the browser used at the login moment (sparse, since the cookie
+        lasts 30 days). A student can log in once in Safari but browse lessons inside the LINE
+        webview, so the two can differ. <strong>In-app</strong> means an embedded webview
+        (LINE, Facebook, Instagram, TikTok) — where the YouTube player most often fails.
+        Cross-reference in-app users against playback failures (<code>wp dl-diag list</code>).
     </p>
 
     <!-- Filter bar -->
     <div style="display:flex; gap:20px; align-items:center; flex-wrap:wrap; margin-bottom:16px;">
+        <div>
+            <strong>Show:</strong>
+            <?php
+            $types = array('session' => 'Browsing', 'login' => 'Logins', 'all' => 'Both');
+            $type_links = array();
+            foreach ($types as $key => $label) {
+                $args = array('page' => 'dogology-learning-logins', 'type' => $key, 'days' => $days_opt);
+                if ($inapp_only) {
+                    $args['inapp'] = 1;
+                }
+                if ($search !== '') {
+                    $args['s'] = $search;
+                }
+                $url = admin_url('admin.php?' . http_build_query($args));
+                $type_links[] = ($key === $type)
+                    ? '<strong>' . esc_html($label) . '</strong>'
+                    : '<a href="' . esc_url($url) . '">' . esc_html($label) . '</a>';
+            }
+            echo implode(' &nbsp;|&nbsp; ', $type_links);
+            ?>
+        </div>
         <div>
             <strong>Range:</strong>
             <?php
@@ -183,12 +222,13 @@ if ($search !== '') {
         </div>
         <form method="get" style="margin-left:auto;">
             <input type="hidden" name="page" value="dogology-learning-logins">
+            <input type="hidden" name="type" value="<?php echo esc_attr($type); ?>">
             <input type="hidden" name="days" value="<?php echo esc_attr($days_opt); ?>">
             <?php if ($inapp_only): ?><input type="hidden" name="inapp" value="1"><?php endif; ?>
             <input type="search" name="s" value="<?php echo esc_attr($search); ?>" placeholder="Search name or email">
             <button type="submit" class="button">Search</button>
             <?php if ($search !== ''): ?>
-                <a href="<?php echo esc_url(admin_url('admin.php?page=dogology-learning-logins&days=' . $days_opt . ($inapp_only ? '&inapp=1' : ''))); ?>" class="button-link">Clear</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=dogology-learning-logins&type=' . $type . '&days=' . $days_opt . ($inapp_only ? '&inapp=1' : ''))); ?>" class="button-link">Clear</a>
             <?php endif; ?>
         </form>
     </div>
@@ -201,6 +241,7 @@ if ($search !== '') {
                 <thead>
                     <tr>
                         <th style="width:150px;">When</th>
+                        <th style="width:90px;">Event</th>
                         <th>Student</th>
                         <th style="width:150px;">Browser</th>
                         <th style="width:120px;">IP</th>
@@ -212,6 +253,13 @@ if ($search !== '') {
                             <tr>
                                 <td title="<?php echo esc_attr($r->logged_in_at); ?>">
                                     <?php echo esc_html(date_i18n('j M Y, H:i', strtotime($r->logged_in_at))); ?>
+                                </td>
+                                <td>
+                                    <?php if ($r->event_type === 'login'): ?>
+                                        <span style="background:#eef2ff; color:#3858e9; padding:2px 7px; border-radius:4px; font-size:11px; font-weight:600;">login</span>
+                                    <?php else: ?>
+                                        <span style="background:#f0f0f1; color:#50575e; padding:2px 7px; border-radius:4px; font-size:11px;">browse</span>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <strong><?php echo $r->display_name ? esc_html($r->display_name) : '(deleted #' . intval($r->user_id) . ')'; ?></strong>
@@ -237,7 +285,7 @@ if ($search !== '') {
                             </tr>
                         <?php endforeach; ?>
                     <?php else: ?>
-                        <tr><td colspan="4">No logins recorded for this filter.</td></tr>
+                        <tr><td colspan="5">No events recorded for this filter.</td></tr>
                     <?php endif; ?>
                 </tbody>
             </table>
@@ -245,7 +293,7 @@ if ($search !== '') {
             <?php if ($total_pages > 1): ?>
                 <div class="tablenav bottom">
                     <div class="tablenav-pages">
-                        <span class="displaying-num"><?php echo number_format_i18n($total_rows); ?> logins</span>
+                        <span class="displaying-num"><?php echo number_format_i18n($total_rows); ?> events</span>
                         <?php
                         $pag_args = $base_args;
                         $pag_args['days'] = $days_opt;
@@ -274,7 +322,10 @@ if ($search !== '') {
                     <?php echo esc_html($inapp_pct); ?>%
                 </p>
                 <p style="color:#646970; margin:6px 0 0;">
-                    <?php echo number_format_i18n($inapp_logins); ?> of <?php echo number_format_i18n($total_logins); ?> logins
+                    <?php
+                    $event_noun = ($type === 'login') ? 'logins' : (($type === 'all') ? 'events' : 'browsing sessions');
+                    ?>
+                    <?php echo number_format_i18n($inapp_logins); ?> of <?php echo number_format_i18n($total_logins); ?> <?php echo esc_html($event_noun); ?>
                     <?php echo $days > 0 ? 'in the last ' . intval($days) . ' days' : 'all time'; ?>.
                     These are the at-risk video sessions.
                 </p>

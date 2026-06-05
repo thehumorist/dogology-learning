@@ -58,20 +58,24 @@ class Dogology_Learning_DB_Installer
              KEY lesson_id (lesson_id)
         ) $charset_collate;";
 
-        // Login Events Table — one row per successful student login.
-        // Captures the browser/in-app environment so "can't play video" reports
-        // (YouTube iframe failing inside embedded webviews) can be tied to a
-        // specific student and cross-referenced with the player's video-diag log.
+        // Login Events Table — browser/in-app environment per event.
+        // event_type = 'login' (the login moment) or 'session' (a logged-in
+        // student loading a lesson/player page, deduped to once per browser per
+        // day). Sessions are what actually matter for "can't play video", since
+        // the long-lived cookie means a student may log in once in Safari but
+        // browse lessons inside the LINE webview where the YouTube iframe fails.
         $table_logins = $wpdb->prefix . 'dogology_login_events';
         $sql_logins = "CREATE TABLE $table_logins (
             id bigint(20) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             user_id bigint(20) UNSIGNED NOT NULL,
+            event_type varchar(20) NOT NULL DEFAULT 'login',
             ua varchar(512) DEFAULT '',
             browser varchar(40) DEFAULT '',
             is_inapp tinyint(1) DEFAULT 0,
             ip varchar(45) DEFAULT '',
             logged_in_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
             KEY user_id (user_id),
+            KEY event_type (event_type),
             KEY logged_in_at (logged_in_at),
             KEY is_inapp (is_inapp)
         ) $charset_collate;";
@@ -114,6 +118,18 @@ class Dogology_Learning_DB_Installer
                 AND p1.course_id = p2.course_id
                 AND p1.lesson_id = p2.lesson_id
             ");
+        }
+
+        // Version 1.1.76: add event_type to login-events (login vs browsing session).
+        // Explicit ALTER so existing rows are guaranteed to backfill as 'login'
+        // (they predate session tracking) regardless of dbDelta's column handling.
+        if (version_compare($old_version, '1.1.76', '<')) {
+            $table_logins = $wpdb->prefix . 'dogology_login_events';
+            $col = $wpdb->get_var($wpdb->prepare("SHOW COLUMNS FROM `$table_logins` LIKE %s", 'event_type'));
+            if (!$col) {
+                $wpdb->query("ALTER TABLE `$table_logins` ADD event_type varchar(20) NOT NULL DEFAULT 'login' AFTER user_id");
+                $wpdb->query("ALTER TABLE `$table_logins` ADD KEY event_type (event_type)");
+            }
         }
 
         // Always run install (dbDelta) during upgrades to ensure schema is synced

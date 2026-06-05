@@ -79,12 +79,50 @@ class Dogology_Auth
     }
 
     /**
-     * Persist one login-environment row. Best-effort and fully swallowed: an
-     * analytics insert must never be the thing that blocks a student from logging
-     * in. The table is created by Dogology_Learning_DB_Installer; if it's missing
-     * (e.g. upgrade hasn't run yet) the insert simply fails silently.
+     * Persist one login-environment row ('login' event).
      */
     private static function record_login_event($user_id)
+    {
+        self::insert_event($user_id, 'login');
+    }
+
+    /**
+     * Record a browsing session for an already-logged-in student. Called on
+     * lesson/player page loads — the exact moment video playback matters, and
+     * the moment the browser may differ from the one used at login (long-lived
+     * cookie + opening lessons from inside the LINE/FB webview).
+     *
+     * Deduped to at most one row per student per browser-label per day via a
+     * transient, so a student clicking through 20 lessons writes one row, not 20.
+     * Resolves the current student itself; no-op for anonymous requests.
+     */
+    public static function record_session_event()
+    {
+        try {
+            $student = self::get_current_student();
+            if (!$student) {
+                return;
+            }
+            $ua = isset($_SERVER['HTTP_USER_AGENT']) ? (string) $_SERVER['HTTP_USER_AGENT'] : '';
+            $parsed = Dogology_Helpers::parse_user_agent($ua);
+            $dedup_key = 'dl_seen_' . (int) $student->id . '_' . md5($parsed['label']);
+            if (get_transient($dedup_key)) {
+                return;
+            }
+            set_transient($dedup_key, 1, DAY_IN_SECONDS);
+            self::insert_event($student->id, 'session');
+        } catch (\Throwable $e) {
+            // Never break a page render for analytics.
+        }
+    }
+
+    /**
+     * Shared insert for login/session environment rows. Best-effort and fully
+     * swallowed: analytics must never block a login or a page render. The table
+     * is created by Dogology_Learning_DB_Installer; if it's missing (upgrade not
+     * yet run) the insert simply fails silently.
+     */
+    private static function insert_event($user_id, $event_type)
     {
         try {
             global $wpdb;
@@ -94,16 +132,17 @@ class Dogology_Auth
                 $wpdb->prefix . 'dogology_login_events',
                 array(
                     'user_id'      => (int) $user_id,
+                    'event_type'   => $event_type,
                     'ua'           => $ua,
                     'browser'      => $parsed['label'],
                     'is_inapp'     => $parsed['is_inapp'] ? 1 : 0,
                     'ip'           => Dogology_Helpers::client_ip(),
                     'logged_in_at' => current_time('mysql'),
                 ),
-                array('%d', '%s', '%s', '%d', '%s', '%s')
+                array('%d', '%s', '%s', '%s', '%d', '%s', '%s')
             );
         } catch (\Throwable $e) {
-            // Never break login for analytics.
+            // Never break the request for analytics.
         }
     }
 

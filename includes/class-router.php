@@ -140,6 +140,11 @@ class Dogology_Learning_Router
                 $new_template = DOGOLOGY_LEARNING_PATH . 'templates/auth.php';
                 break;
             case 'player':
+                // Record the browsing environment of this lesson/video view
+                // (deduped per student/browser/day). This is where the YouTube
+                // player lives, so it's the browser that matters for playback —
+                // and may differ from the one used at login.
+                Dogology_Auth::record_session_event();
                 $new_template = DOGOLOGY_LEARNING_PATH . 'templates/player.php';
                 break;
             case 'logout':
