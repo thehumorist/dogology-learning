@@ -58,10 +58,29 @@ class Dogology_Learning_DB_Installer
              KEY lesson_id (lesson_id)
         ) $charset_collate;";
 
+        // Login Events Table — one row per successful student login.
+        // Captures the browser/in-app environment so "can't play video" reports
+        // (YouTube iframe failing inside embedded webviews) can be tied to a
+        // specific student and cross-referenced with the player's video-diag log.
+        $table_logins = $wpdb->prefix . 'dogology_login_events';
+        $sql_logins = "CREATE TABLE $table_logins (
+            id bigint(20) UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            user_id bigint(20) UNSIGNED NOT NULL,
+            ua varchar(512) DEFAULT '',
+            browser varchar(40) DEFAULT '',
+            is_inapp tinyint(1) DEFAULT 0,
+            ip varchar(45) DEFAULT '',
+            logged_in_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            KEY user_id (user_id),
+            KEY logged_in_at (logged_in_at),
+            KEY is_inapp (is_inapp)
+        ) $charset_collate;";
+
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql_users);
         dbDelta($sql_enrollments);
         dbDelta($sql_progress);
+        dbDelta($sql_logins);
 
         // Stamp version on first install so plugins_loaded's upgrade path becomes a no-op.
         update_option('dogology_learning_db_version', DOGOLOGY_LEARNING_VERSION);

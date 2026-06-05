@@ -152,3 +152,160 @@ class Dogology_Learning_CLI
 }
 
 WP_CLI::add_command('dl-diag', 'Dogology_Learning_CLI');
+
+/**
+ * WP-CLI commands for reading the student login-environment log
+ * (wp_dogology_login_events). Answers "which browser does this student log in
+ * with?" and "how common are in-app webviews across all logins?" — the baseline
+ * the anonymous, failure-only video-diag log can't give you.
+ */
+class Dogology_Learning_Logins_CLI
+{
+    private function table()
+    {
+        global $wpdb;
+        return $wpdb->prefix . 'dogology_login_events';
+    }
+
+    /**
+     * List recent login events, newest first.
+     *
+     * ## OPTIONS
+     *
+     * [--user=<user_id>]
+     * : Filter to a single student (dogology_users.id).
+     *
+     * [--inapp]
+     * : Show only in-app webview logins (LINE/Facebook/Instagram/TikTok/WebView).
+     *
+     * [--limit=<limit>]
+     * : Max rows to show.
+     * ---
+     * default: 50
+     * ---
+     *
+     * [--format=<format>]
+     * : Output format.
+     * ---
+     * default: table
+     * options:
+     *   - table
+     *   - json
+     *   - csv
+     *   - yaml
+     * ---
+     *
+     * ## EXAMPLES
+     *
+     *     wp dl-logins list
+     *     wp dl-logins list --user=42
+     *     wp dl-logins list --inapp --limit=100
+     *
+     * @when after_wp_load
+     */
+    public function list($args, $assoc_args)
+    {
+        global $wpdb;
+        $t = $this->table();
+        $limit = isset($assoc_args['limit']) ? max(1, (int) $assoc_args['limit']) : 50;
+        $format = isset($assoc_args['format']) ? (string) $assoc_args['format'] : 'table';
+
+        $where = array('1=1');
+        $params = array();
+        if (isset($assoc_args['user'])) {
+            $where[] = 'l.user_id = %d';
+            $params[] = (int) $assoc_args['user'];
+        }
+        if (isset($assoc_args['inapp'])) {
+            $where[] = 'l.is_inapp = 1';
+        }
+        $where_sql = implode(' AND ', $where);
+
+        $u = $wpdb->prefix . 'dogology_users';
+        $sql = "SELECT l.logged_in_at, l.user_id, u.display_name, u.email,
+                       l.browser, l.is_inapp, l.ip, l.ua
+                FROM $t l LEFT JOIN $u u ON u.id = l.user_id
+                WHERE $where_sql
+                ORDER BY l.logged_in_at DESC
+                LIMIT %d";
+        $params[] = $limit;
+        $rows = $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
+
+        if (empty($rows)) {
+            WP_CLI::log('No login events recorded yet.');
+            return;
+        }
+
+        $rows = array_map(function ($r) {
+            return array(
+                'logged_in_at' => $r['logged_in_at'],
+                'user_id'      => $r['user_id'],
+                'name'         => $r['display_name'],
+                'email'        => $r['email'],
+                'browser'      => $r['browser'],
+                'in_app'       => $r['is_inapp'] ? 'YES' : '',
+                'ip'           => $r['ip'],
+            );
+        }, $rows);
+
+        WP_CLI\Utils\format_items($format, $rows, array('logged_in_at', 'user_id', 'name', 'email', 'browser', 'in_app', 'ip'));
+    }
+
+    /**
+     * Browser distribution across all recorded logins.
+     *
+     * ## OPTIONS
+     *
+     * [--days=<days>]
+     * : Restrict to logins within the last N days.
+     *
+     * ## EXAMPLES
+     *
+     *     wp dl-logins browsers
+     *     wp dl-logins browsers --days=30
+     *
+     * @when after_wp_load
+     */
+    public function browsers($args, $assoc_args)
+    {
+        global $wpdb;
+        $t = $this->table();
+
+        $where = '1=1';
+        $params = array();
+        if (isset($assoc_args['days'])) {
+            $where = 'logged_in_at >= DATE_SUB(NOW(), INTERVAL %d DAY)';
+            $params[] = (int) $assoc_args['days'];
+        }
+
+        $sql = "SELECT browser, is_inapp, COUNT(*) AS n
+                FROM $t WHERE $where
+                GROUP BY browser, is_inapp ORDER BY n DESC";
+        $rows = $params ? $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A)
+                        : $wpdb->get_results($sql, ARRAY_A);
+
+        if (empty($rows)) {
+            WP_CLI::log('No login events recorded yet.');
+            return;
+        }
+
+        $total = 0;
+        foreach ($rows as $r) {
+            $total += (int) $r['n'];
+        }
+        $out = array_map(function ($r) use ($total) {
+            $n = (int) $r['n'];
+            return array(
+                'browser' => $r['browser'],
+                'in_app'  => $r['is_inapp'] ? 'YES' : '',
+                'logins'  => $n,
+                'pct'     => $total ? round($n * 100 / $total, 1) . '%' : '0%',
+            );
+        }, $rows);
+
+        WP_CLI\Utils\format_items('table', $out, array('browser', 'in_app', 'logins', 'pct'));
+        WP_CLI::log(sprintf('Total logins: %d', $total));
+    }
+}
+
+WP_CLI::add_command('dl-logins', 'Dogology_Learning_Logins_CLI');

@@ -57,6 +57,12 @@ class Dogology_Auth
      */
     public static function login_student($user_id)
     {
+        // Record the login environment (browser / in-app webview) up front, before
+        // anything can early-return. A login is a login even if the cookie can't be
+        // set, and this is the single chokepoint every auth path funnels through —
+        // LINE, magic code, passkey, and handoff. See record_login_event().
+        self::record_login_event($user_id);
+
         $token = $user_id . '|' . self::generate_hash($user_id);
         if (headers_sent($file, $line)) {
             error_log("[Dogology_Auth] login_student: headers already sent at {$file}:{$line} — cookie not set for user {$user_id}");
@@ -70,6 +76,35 @@ class Dogology_Auth
             'samesite' => 'Lax'
         ]);
         return true;
+    }
+
+    /**
+     * Persist one login-environment row. Best-effort and fully swallowed: an
+     * analytics insert must never be the thing that blocks a student from logging
+     * in. The table is created by Dogology_Learning_DB_Installer; if it's missing
+     * (e.g. upgrade hasn't run yet) the insert simply fails silently.
+     */
+    private static function record_login_event($user_id)
+    {
+        try {
+            global $wpdb;
+            $ua = isset($_SERVER['HTTP_USER_AGENT']) ? substr((string) $_SERVER['HTTP_USER_AGENT'], 0, 512) : '';
+            $parsed = Dogology_Helpers::parse_user_agent($ua);
+            $wpdb->insert(
+                $wpdb->prefix . 'dogology_login_events',
+                array(
+                    'user_id'      => (int) $user_id,
+                    'ua'           => $ua,
+                    'browser'      => $parsed['label'],
+                    'is_inapp'     => $parsed['is_inapp'] ? 1 : 0,
+                    'ip'           => Dogology_Helpers::client_ip(),
+                    'logged_in_at' => current_time('mysql'),
+                ),
+                array('%d', '%s', '%s', '%d', '%s', '%s')
+            );
+        } catch (\Throwable $e) {
+            // Never break login for analytics.
+        }
     }
 
     /**
