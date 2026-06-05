@@ -14,6 +14,12 @@ if (!$current_student) {
     exit;
 }
 
+// Detect Samsung Internet. Their browser applies unusual compositing to
+// position:absolute overlays inside an iframe container, causing visual
+// glitches with our overlay stack. Disable all overlays for Samsung Internet.
+$_dl_ua_parsed  = Dogology_Helpers::parse_user_agent($_SERVER['HTTP_USER_AGENT'] ?? '');
+$_dl_is_samsung = ($_dl_ua_parsed['label'] === 'Samsung Internet');
+
 // 2. Get Route Params
 // Cast explicitly — get_query_var returns whatever matched the rewrite regex, and
 // downstream consumers (get_post, get_post_meta, home_url string interpolation)
@@ -916,6 +922,21 @@ $t = $trans[$current_lang];
             overflow: hidden !important;
             border: none !important;
         }
+
+        <?php if ($_dl_is_samsung): ?>
+        /* Samsung Internet: disable all overlays.
+           Samsung's compositing of position:absolute children inside an iframe
+           container causes visual glitches with our overlay stack. Since the
+           overlays are cosmetic (logo/branding shields), disabling them entirely
+           is safer than trying to patch compositing quirks per-version. */
+        #video-wrapper.samsung-browser #video-overlay,
+        #video-wrapper.samsung-browser #video-logo-overlay,
+        #video-wrapper.samsung-browser #video-top-bar,
+        #video-wrapper.samsung-browser #video-pause-overlay,
+        #video-wrapper.samsung-browser #video-end-overlay {
+            display: none !important;
+        }
+        <?php endif; ?>
     </style>
     <!-- Dogology Learning v<?php echo DOGOLOGY_LEARNING_VERSION; ?> -->
     <script async data-no-minify="1" data-no-optimize="1" data-no-defer="1"
@@ -1244,7 +1265,7 @@ $t = $trans[$current_lang];
             <!-- Video Container -->
             <?php if ($video_url): ?>
                 <div id="video-wrapper"
-                    class="aspect-video bg-black flex items-center justify-center text-white relative group overflow-hidden"
+                    class="aspect-video bg-black flex items-center justify-center text-white relative group overflow-hidden<?php echo $_dl_is_samsung ? ' samsung-browser' : ''; ?>"
                     style="aspect-ratio: 16/9;">
                     <div id="player-container" class="absolute inset-0 w-full h-full"
                         style="position: absolute; top:0; left:0; width:100%; height:100%;">
