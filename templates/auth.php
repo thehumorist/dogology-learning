@@ -562,6 +562,9 @@ $auth_trans = [
         'passkey_bridge_fallback' => 'หากไม่มีอะไรเกิดขึ้น',
         'passkey_bridge_link' => 'ไปที่แดชบอร์ด',
         'error_nonce' => 'Token ไม่ถูกต้อง กรุณารีเฟรชหน้า',
+        'iab_notice' => 'กำลังเปิดผ่านแอป Facebook/Instagram อยู่ แนะนำให้กดปุ่ม ⋯ มุมขวาบน แล้วเลือก "เปิดในเบราว์เซอร์" จะได้เข้าเรียนครั้งหน้าโดยไม่ต้องล็อกอินใหม่',
+        'iab_copy' => 'คัดลอกลิงก์ไปเปิดใน Chrome / Safari',
+        'iab_copied' => 'คัดลอกแล้ว! เปิดเบราว์เซอร์แล้ววางลิงก์',
     ],
     'en' => [
         'page_title' => 'Login - Dogology Experience',
@@ -602,9 +605,21 @@ $auth_trans = [
         'passkey_bridge_fallback' => 'If nothing happens,',
         'passkey_bridge_link' => 'go to dashboard',
         'error_nonce' => 'Invalid security token. Please refresh.',
+        'iab_notice' => 'You\'re inside the Facebook/Instagram app. Tap ⋯ (top right) → "Open in browser" so you stay logged in next time.',
+        'iab_copy' => 'Copy link to open in Chrome / Safari',
+        'iab_copied' => 'Copied! Open your browser and paste.',
     ]
 ];
 $at = $auth_trans[$current_lang];
+
+// FB/IG in-app browser escape strip (2026-07-02). Sessions created inside
+// Meta's IAB live only there — next visit from the real browser isn't logged
+// in, and passkeys/WebAuthn don't work in the IAB at all. We can't force an
+// exit (openExternalBrowser=1 is LINE-only; Meta ignores everything), so we
+// instruct + offer copy-link. LINE IAB excluded: LIFF auto-login is the happy
+// path there. Same parse_user_agent() the player strip uses.
+$_dl_auth_parsed = Dogology_Helpers::parse_user_agent($_SERVER['HTTP_USER_AGENT'] ?? '');
+$_dl_show_iab_strip = in_array($_dl_auth_parsed['label'], array('Facebook in-app', 'Instagram in-app'), true);
 ?>
 <!DOCTYPE html>
 <html <?php language_attributes(); ?>>
@@ -818,6 +833,31 @@ $at = $auth_trans[$current_lang];
 
     <div class="dl-login-wrap">
         <div class="dl-login-card">
+
+            <?php if ($_dl_show_iab_strip): ?>
+            <!-- FB/IG in-app browser: instruct escape to real browser (can't be forced). -->
+            <div id="dl-iab-strip"
+                style="display:flex; flex-direction:column; gap:8px; background:#FEF3C7; color:#92400E; border:1px solid #FCD34D; border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.5; margin:-10px -10px 20px;">
+                <span>💡 <?php echo esc_html($at['iab_notice']); ?></span>
+                <button type="button" id="dl-iab-copy" data-url="<?php echo esc_attr(home_url('/my-courses')); ?>"
+                    style="align-self:flex-start; background:none; border:none; padding:0; color:#92400E; font-weight:700; text-decoration:underline; cursor:pointer; font-size:13px; font-family:inherit;">
+                    📋 <?php echo esc_html($at['iab_copy']); ?>
+                </button>
+            </div>
+            <script>
+                (function () {
+                    var btn = document.getElementById('dl-iab-copy');
+                    if (!btn) return;
+                    btn.addEventListener('click', function () {
+                        var url = btn.getAttribute('data-url');
+                        var done = function () { btn.textContent = '✅ <?php echo esc_js($at['iab_copied']); ?>'; };
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(url).then(done).catch(function () { window.prompt('Copy:', url); });
+                        } else { window.prompt('Copy:', url); }
+                    });
+                })();
+            </script>
+            <?php endif; ?>
 
             <!-- Brand -->
             <div class="dl-login-brand">
