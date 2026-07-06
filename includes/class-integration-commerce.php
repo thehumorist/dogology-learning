@@ -66,6 +66,43 @@ class Dogology_Learning_Integration_Commerce
     public function init()
     {
         add_action('dogology_order_approved', array($this, 'handle_order_approved'), 10, 3);
+        add_action('dogology_order_line_linked', array($this, 'handle_order_line_linked'), 10, 2);
+    }
+
+    /**
+     * Handle post-payment LINE linking (Commerce /link-order endpoint).
+     *
+     * When a guest (email-only) buyer connects their LINE account after the
+     * order was already approved, the student profile created at approval
+     * time has line_uid NULL. Without this merge, their next LINE login
+     * would create a second empty student account. upsert_user matches by
+     * email and fills line_uid only when empty, so this is a safe merge.
+     *
+     * @param int $order_id
+     * @param object $order Order row with the freshly-linked line_user_id
+     */
+    public function handle_order_line_linked($order_id, $order)
+    {
+        $this->debug_log("handle_order_line_linked CALLED", ['order_id' => $order_id]);
+
+        $user_data = array(
+            'line_user_id' => !empty($order->line_user_id) ? trim($order->line_user_id) : null,
+            'email' => !empty($order->customer_email) ? trim($order->customer_email) : null,
+        );
+
+        if (empty($user_data['line_user_id'])) {
+            $this->debug_log("EXITING - no LINE ID on linked order", ['order_id' => $order_id]);
+            return;
+        }
+
+        $data_helper = new Dogology_Learning_Data();
+        $user_id = $data_helper->upsert_user($user_data);
+
+        if ($user_id) {
+            $this->debug_log("SUCCESS - line_uid merged into student profile", ['user_id' => $user_id, 'order_id' => $order_id]);
+        } else {
+            $this->debug_log("FAILED - upsert_user returned falsy", ['order_id' => $order_id]);
+        }
     }
 
     /**
