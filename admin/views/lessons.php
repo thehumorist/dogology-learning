@@ -97,44 +97,59 @@ $lessons = get_posts(array(
     'numberposts' => -1,
 ));
 
-// Cache to prevent repetitive DB calls for module orders and course titles
-$module_cache = [];
-$course_cache = [];
+// Bulk-load modules + courses ONCE. get_posts primes the post + meta caches,
+// so the loops below (and the module dropdown further down) do zero per-row
+// DB queries — this page previously ran 3-4 queries per lesson (N+1).
+$all_modules = get_posts(array('post_type' => 'dogology_module', 'numberposts' => -1, 'orderby' => 'title', 'order' => 'ASC'));
+$courses = get_posts(array('post_type' => 'dogology_course', 'numberposts' => -1));
+
+$modules_by_id = array();
+foreach ($all_modules as $m) {
+    $modules_by_id[$m->ID] = $m;
+}
+$course_titles = array();
+foreach ($courses as $c) {
+    $course_titles[$c->ID] = $c->post_title;
+}
 
 foreach ($lessons as $lesson) {
-    $l_module_id = get_post_meta($lesson->ID, '_dogology_parent_module', true);
+    $l_module_id = (int) get_post_meta($lesson->ID, '_dogology_parent_module', true);
 
     // Default fallback values
     $course_title = 'ZZZ'; // Fall to bottom
     $module_order = 99999;
+    $course_name = '-';
+    $legacy_course_id = 0;
+    $module = ($l_module_id && isset($modules_by_id[$l_module_id])) ? $modules_by_id[$l_module_id] : null;
 
-    if ($l_module_id) {
-        if (!isset($module_cache[$l_module_id])) {
-            $l_module = get_post($l_module_id);
-            if ($l_module) {
-                // Cache module order
-                $module_cache[$l_module_id]['order'] = intval($l_module->menu_order);
-
-                // Fetch & Cache course title
-                $l_course_id = get_post_meta($l_module_id, '_dogology_parent_course', true);
-                if ($l_course_id) {
-                    if (!isset($course_cache[$l_course_id])) {
-                        $course_cache[$l_course_id] = get_the_title($l_course_id);
-                    }
-                    $module_cache[$l_module_id]['course'] = $course_cache[$l_course_id];
-                } else {
-                    $module_cache[$l_module_id]['course'] = 'ZZZ_Orphaned';
-                }
-            } else {
-                $module_cache[$l_module_id] = ['order' => 99999, 'course' => 'ZZZ_Deleted_Module'];
-            }
+    if ($module) {
+        $module_order = intval($module->menu_order);
+        $l_course_id = (int) get_post_meta($module->ID, '_dogology_parent_course', true);
+        if ($l_course_id && isset($course_titles[$l_course_id])) {
+            $course_title = $course_titles[$l_course_id];
+            $course_name = $course_titles[$l_course_id];
+        } else {
+            $course_title = 'ZZZ_Orphaned';
+            $course_name = 'Unknown Course';
         }
-        $course_title = $module_cache[$l_module_id]['course'];
-        $module_order = $module_cache[$l_module_id]['order'];
+    } elseif ($l_module_id) {
+        // Module was deleted
+        $course_title = 'ZZZ_Deleted_Module';
+        $legacy_course_id = (int) get_post_meta($lesson->ID, '_dogology_parent_course', true);
+        $course_name = ($legacy_course_id && isset($course_titles[$legacy_course_id]))
+            ? $course_titles[$legacy_course_id] . ' (Orphaned)' : '-';
+    } else {
+        // Legacy Check
+        $legacy_course_id = (int) get_post_meta($lesson->ID, '_dogology_parent_course', true);
+        $course_name = ($legacy_course_id && isset($course_titles[$legacy_course_id]))
+            ? $course_titles[$legacy_course_id] . ' (Legacy)' : '-';
     }
 
     $lesson->_cached_course_title = $course_title;
     $lesson->_cached_module_order = $module_order;
+    $lesson->_cached_module = $module;
+    $lesson->_cached_course_name = $course_name;
+    $lesson->_cached_legacy_course_id = $legacy_course_id;
 }
 
 // Sort the lessons
@@ -152,8 +167,6 @@ usort($lessons, function ($a, $b) {
     // 3. Sort by Lesson Order
     return $a->menu_order - $b->menu_order;
 });
-
-$courses = get_posts(array('post_type' => 'dogology_course', 'numberposts' => -1));
 ?>
 
 <div class="wrap dogology-learning-wrap">
@@ -217,8 +230,7 @@ $courses = get_posts(array('post_type' => 'dogology_course', 'numberposts' => -1
                 <select id="parent_module" name="parent_module" required>
                     <option value="">-- Select Module --</option>
                     <?php
-                    // Group Modules by Course
-                    $all_modules = get_posts(array('post_type' => 'dogology_module', 'numberposts' => -1, 'orderby' => 'title', 'order' => 'ASC'));
+                    // Group Modules by Course ($all_modules / $course_titles bulk-loaded above)
                     $grouped = [];
                     foreach ($all_modules as $m) {
                         $c_id = get_post_meta($m->ID, '_dogology_parent_course', true);
@@ -229,12 +241,11 @@ $courses = get_posts(array('post_type' => 'dogology_course', 'numberposts' => -1
                         }
                     }
 
-                    // Fetch Courses for labels
                     foreach ($grouped as $c_id => $modules) {
                         if ($c_id === 'orphaned') {
                             echo '<optgroup label="Orphaned Modules">';
                         } else {
-                            $course_title = get_the_title($c_id);
+                            $course_title = isset($course_titles[$c_id]) ? $course_titles[$c_id] : get_the_title($c_id);
                             echo '<optgroup label="' . esc_attr($course_title) . '">';
                         }
 
@@ -336,25 +347,10 @@ $courses = get_posts(array('post_type' => 'dogology_course', 'numberposts' => -1
                 <?php if ($lessons): ?>
                     <?php foreach ($lessons as $lesson): ?>
                         <?php
-                        $l_module_id = get_post_meta($lesson->ID, '_dogology_parent_module', true);
-                        $legacy_course_id = null;
-                        if ($l_module_id) {
-                            $l_module = get_post($l_module_id);
-                            if ($l_module) {
-                                // Get Course Name via Module
-                                $l_course_id = get_post_meta($l_module_id, '_dogology_parent_course', true);
-                                $l_course_name = $l_course_id ? get_the_title($l_course_id) : 'Unknown Course';
-                            } else {
-                                // Module was deleted
-                                $legacy_course_id = get_post_meta($lesson->ID, '_dogology_parent_course', true);
-                                $l_course_name = $legacy_course_id ? get_the_title($legacy_course_id) . ' (Orphaned)' : '-';
-                            }
-                        } else {
-                            // Legacy Check
-                            $l_module = null;
-                            $legacy_course_id = get_post_meta($lesson->ID, '_dogology_parent_course', true);
-                            $l_course_name = $legacy_course_id ? get_the_title($legacy_course_id) . ' (Legacy)' : '-';
-                        }
+                        // Module/course context resolved in the bulk-load pass above.
+                        $l_module = $lesson->_cached_module;
+                        $l_course_name = $lesson->_cached_course_name;
+                        $legacy_course_id = $lesson->_cached_legacy_course_id;
 
                         $l_duration = get_post_meta($lesson->ID, '_dogology_duration', true);
                         $l_attach = get_post_meta($lesson->ID, '_dogology_attachment_url', true);

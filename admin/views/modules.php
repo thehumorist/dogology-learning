@@ -74,6 +74,26 @@ $modules = get_posts(array(
 
 // Get All Courses for Dropdown
 $courses = get_posts(array('post_type' => 'dogology_course', 'numberposts' => -1, 'orderby' => 'title', 'order' => 'ASC'));
+$courses_by_id = array();
+foreach ($courses as $c) {
+    $courses_by_id[$c->ID] = $c;
+}
+
+// Lesson counts per module in ONE aggregate query. Previously the table loop
+// ran a full get_posts() per module just to count its lessons (N+1, and each
+// call hydrated every lesson post object into memory).
+global $wpdb;
+$lesson_counts = array();
+$count_rows = $wpdb->get_results(
+    "SELECT pm.meta_value AS module_id, COUNT(*) AS n
+     FROM {$wpdb->posts} p
+     INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID AND pm.meta_key = '_dogology_parent_module'
+     WHERE p.post_type = 'dogology_lesson' AND p.post_status = 'publish'
+     GROUP BY pm.meta_value"
+);
+foreach ($count_rows as $row) {
+    $lesson_counts[(int) $row->module_id] = (int) $row->n;
+}
 ?>
 
 <div class="wrap dogology-learning-wrap">
@@ -164,15 +184,10 @@ $courses = get_posts(array('post_type' => 'dogology_course', 'numberposts' => -1
                 <?php if ($modules): ?>
                     <?php foreach ($modules as $module): ?>
                         <?php
-                        $m_course_id = get_post_meta($module->ID, '_dogology_parent_course', true);
-                        $m_course = $m_course_id ? get_post($m_course_id) : null;
-                        // Count lessons in this module
-                        $lesson_count = count(get_posts(array(
-                            'post_type' => 'dogology_lesson',
-                            'meta_key' => '_dogology_parent_module',
-                            'meta_value' => $module->ID,
-                            'numberposts' => -1
-                        )));
+                        // Course + lesson count resolved from the bulk maps above (no per-row queries).
+                        $m_course_id = (int) get_post_meta($module->ID, '_dogology_parent_course', true);
+                        $m_course = ($m_course_id && isset($courses_by_id[$m_course_id])) ? $courses_by_id[$m_course_id] : null;
+                        $lesson_count = isset($lesson_counts[$module->ID]) ? $lesson_counts[$module->ID] : 0;
                         ?>
                         <tr>
                             <td>
