@@ -246,10 +246,56 @@ class Dogology_Auth
     }
 
     /**
+     * Client IP (Cloudflare-aware — site is proxied, REMOTE_ADDR is the CF edge)
+     */
+    private static function get_client_ip()
+    {
+        if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+            return sanitize_text_field($_SERVER['HTTP_CF_CONNECTING_IP']);
+        }
+        return isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field($_SERVER['REMOTE_ADDR']) : '0.0.0.0';
+    }
+
+    /**
+     * OTP send rate limit: 60s cooldown per email, 5/hour per email, 10/hour per IP.
+     * Counters live in transients (Redis-backed). Returns true and burns one slot,
+     * or false if any limit is hit.
+     */
+    public static function otp_send_allowed($email)
+    {
+        $email_key = md5(strtolower(trim($email)));
+        $ip_key    = md5(self::get_client_ip());
+
+        if (get_transient('dogology_otp_cd_' . $email_key)) {
+            return false;
+        }
+
+        $email_count = (int) get_transient('dogology_otp_hr_' . $email_key);
+        if ($email_count >= 5) {
+            return false;
+        }
+
+        $ip_count = (int) get_transient('dogology_otp_iphr_' . $ip_key);
+        if ($ip_count >= 10) {
+            return false;
+        }
+
+        set_transient('dogology_otp_cd_' . $email_key, 1, MINUTE_IN_SECONDS);
+        set_transient('dogology_otp_hr_' . $email_key, $email_count + 1, HOUR_IN_SECONDS);
+        set_transient('dogology_otp_iphr_' . $ip_key, $ip_count + 1, HOUR_IN_SECONDS);
+
+        return true;
+    }
+
+    /**
      * Send OTP
      */
     public static function send_otp($email, $user_id = 0, $lang = 'en')
     {
+        if (!self::otp_send_allowed($email)) {
+            return false;
+        }
+
         // Generate 6 digit code
         $otp = random_int(100000, 999999);
 

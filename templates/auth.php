@@ -67,6 +67,7 @@ $_err = [
     'must_use_line'   => $_auth_lang === 'th' ? 'บัญชีใหม่ต้องลงทะเบียนผ่าน LINE ก่อน' : 'New accounts must register via LINE. Please login with LINE first.',
     'passkey_unknown' => $_auth_lang === 'th' ? 'ไม่พบ Passkey นี้ในระบบ' : 'Passkey not recognized.',
     'not_logged_in'   => $_auth_lang === 'th' ? 'กรุณาเข้าสู่ระบบก่อน' : 'Not logged in.',
+    'otp_cooldown'    => $_auth_lang === 'th' ? 'ขอรหัสถี่เกินไป กรุณารอสักครู่แล้วลองใหม่' : 'Too many code requests. Please wait a moment and try again.',
 ];
 
 // --- FORM HANDLERS ---
@@ -88,7 +89,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email = sanitize_email($_POST['email']);
         if (is_email($email)) {
             $current_student = Dogology_Auth::get_current_student();
-            Dogology_Auth::send_otp($email, $current_student ? $current_student->id : 0, $_auth_lang);
+
+            // Guest OTP only works for existing students (verify_otp blocks
+            // unknown emails anyway) — so for unknown emails we skip the send
+            // entirely. Response stays identical to a real send so the form
+            // can't be used to bomb arbitrary inboxes or probe which emails
+            // have accounts.
+            $_dl_db = new Dogology_Student_DB();
+            $_dl_known = $current_student || $_dl_db->get_student_by_email($email);
+
+            $_dl_sent = true;
+            if ($_dl_known) {
+                $_dl_sent = Dogology_Auth::send_otp($email, $current_student ? $current_student->id : 0, $_auth_lang);
+            }
+
+            if ($_dl_sent === false) {
+                // Rate limited
+                if (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1') {
+                    echo json_encode(array('success' => false, 'message' => $_err['otp_cooldown']));
+                    exit;
+                }
+                $error = $_err['otp_cooldown'];
+            } else {
 
             // Handle AJAX Request for Single Page Flow
             if (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1') {
@@ -100,6 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $redirect_step = isset($_GET['step']) && $_GET['step'] === 'onboarding' ? 'onboarding' : 'otp';
             wp_redirect(add_query_arg(array('step' => $redirect_step, 'email' => $email, 'sent' => 1)));
             exit;
+            } // end rate-limit else
         } else {
             if (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1') {
                 echo json_encode(array('success' => false, 'message' => $_err['invalid_email']));
