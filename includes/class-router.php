@@ -24,11 +24,11 @@ class Dogology_Learning_Router
         add_action('wp_ajax_dl_video_diag', array($this, 'handle_video_diag'));
         add_action('wp_ajax_nopriv_dl_video_diag', array($this, 'handle_video_diag'));
 
-        // Auto-flush on first load if needed
+        // Auto-flush on first load if needed (v5: /learn/download/{id} ebook route)
         add_action('init', function () {
-            if (!get_option('dogology_learning_permalinks_flushed_v4')) {
+            if (!get_option('dogology_learning_permalinks_flushed_v5')) {
                 flush_rewrite_rules();
-                update_option('dogology_learning_permalinks_flushed_v4', 1);
+                update_option('dogology_learning_permalinks_flushed_v5', 1);
             }
         }, 99);
     }
@@ -43,6 +43,10 @@ class Dogology_Learning_Router
 
         // 2. Login: /student-login
         add_rewrite_rule('^student-login/?$', 'index.php?dl_route=login', 'top');
+
+        // 3-pre. Ebook download: /learn/download/{course_id}
+        // MUST be registered before the numeric player rules or ^learn/([0-9]+) shadows it.
+        add_rewrite_rule('^learn/download/([0-9]+)/?$', 'index.php?dl_route=download&course_id=$matches[1]', 'top');
 
         // 3a. Player Root (Smart Redirect): /learn/{course_slug}
         add_rewrite_rule('^learn/([0-9]+)/?$', 'index.php?dl_route=player&course_id=$matches[1]', 'top');
@@ -128,6 +132,30 @@ class Dogology_Learning_Router
         if (!headers_sent()) {
             header('X-Frame-Options: DENY');
             header("Content-Security-Policy: frame-ancestors 'none'");
+        }
+
+        // Ebook download — streams bytes and exits, never returns a template.
+        // Order of checks: login → course-is-ebook → enrollment → stream.
+        if ($route === 'download') {
+            $course_id = (int) get_query_var('course_id');
+            $student = Dogology_Auth::get_current_student();
+            if (!$student) {
+                wp_safe_redirect(home_url('/student-login/?redirect=' . rawurlencode('/learn/download/' . $course_id)));
+                exit;
+            }
+            $course = get_post($course_id);
+            if (!$course || $course->post_type !== 'dogology_course' || $course->post_status !== 'publish'
+                || !Dogology_Ebook::is_ebook($course_id)) {
+                wp_die(esc_html__('ไม่พบ E-Book นี้', 'dogology-learning'), 'Dogology', array('response' => 404));
+            }
+            $db = new Dogology_Student_DB();
+            $enrolled_ids = array_map(function ($c) {
+                return (int) $c->ID;
+            }, $db->get_student_courses($student->id));
+            if (!in_array($course_id, $enrolled_ids, true)) {
+                wp_die(esc_html__('บัญชีนี้ยังไม่ได้ซื้อ E-Book เล่มนี้', 'dogology-learning'), 'Dogology', array('response' => 403));
+            }
+            Dogology_Ebook::stream_for($course_id, $student); // exits
         }
 
         $new_template = '';

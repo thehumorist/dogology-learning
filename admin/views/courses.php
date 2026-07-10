@@ -41,13 +41,53 @@ if (isset($_POST['dl_save_course']) && wp_verify_nonce($_POST['dl_course_nonce']
             }
         }
 
-        // On new-course create, jump the admin straight into the builder.
-        if ($action === 'created' && !headers_sent()) {
+        $message = "Course $action successfully.";
+
+        // --- Format + catalog fields (ebook support) ---
+        $format = (isset($_POST['dl_format']) && $_POST['dl_format'] === 'ebook') ? 'ebook' : 'course';
+        update_post_meta($pid, '_dogology_format', $format);
+        update_post_meta($pid, '_dogology_public_listed', isset($_POST['dl_public_listed']) ? '1' : '');
+        update_post_meta($pid, '_dogology_sales_url', esc_url_raw($_POST['dl_sales_url'] ?? ''));
+        update_post_meta($pid, '_dogology_price_label', sanitize_text_field($_POST['dl_price_label'] ?? ''));
+
+        // --- Ebook PDF upload → protected dir (never the public media library) ---
+        if ($format === 'ebook' && !empty($_FILES['dl_ebook_pdf']['name'])) {
+            $up = wp_handle_upload($_FILES['dl_ebook_pdf'], array(
+                'test_form' => false,
+                'mimes'     => array('pdf' => 'application/pdf'),
+            ));
+            if (isset($up['error'])) {
+                $message = 'PDF upload failed: ' . $up['error'];
+            } else {
+                // random suffix: defense-in-depth for servers where .htaccess is
+                // ignored (nginx) — the stored URL is unguessable either way
+                $base = sanitize_file_name(pathinfo($up['file'], PATHINFO_FILENAME));
+                $fname = $base . '-' . wp_generate_password(12, false) . '.pdf';
+                $dest = Dogology_Ebook::dir() . '/' . $fname;
+                if (@rename($up['file'], $dest)) {
+                    // FPDI parse probe: fail loudly at config time, never at buyer download time
+                    $probe = Dogology_Ebook::probe($dest);
+                    if (is_wp_error($probe)) {
+                        @unlink($dest);
+                        $message = 'PDF rejected: ' . $probe->get_error_message();
+                    } else {
+                        update_post_meta($pid, '_dogology_ebook_pdf', $fname);
+                        // stamped copies of the old source are stale now
+                        array_map('unlink', glob(Dogology_Ebook::dir() . '/cache/' . intval($pid) . '-*.pdf') ?: array());
+                        $message = "Course $action + PDF \"$fname\" saved (compatibility probe passed).";
+                    }
+                } else {
+                    @unlink($up['file']);
+                    $message = 'Could not move PDF into the protected dir.';
+                }
+            }
+        }
+
+        // On new COURSE create, jump straight into the builder (ebooks have no lessons — stay here).
+        if ($action === 'created' && $format !== 'ebook' && !headers_sent()) {
             wp_safe_redirect(admin_url('admin.php?page=dogology-learning-builder&course_id=' . intval($pid)));
             exit;
         }
-
-        $message = "Course $action successfully.";
     } else {
         $message = 'Error saving course.';
     }
@@ -133,7 +173,7 @@ if ($courses) {
                 <?php echo $editing ? 'Edit Course' : 'Add New Course'; ?>
             </h3>
         </div>
-        <form method="post" action="<?php echo admin_url('admin.php?page=dogology-learning-courses'); ?>">
+        <form method="post" enctype="multipart/form-data" action="<?php echo admin_url('admin.php?page=dogology-learning-courses'); ?>">
             <?php wp_nonce_field('dl_save_course', 'dl_course_nonce'); ?>
             <?php if ($editing): ?>
                 <input type="hidden" name="course_id" value="<?php echo $editing->ID; ?>">
@@ -144,6 +184,57 @@ if ($courses) {
                 <input type="text" id="course_title" name="course_title"
                     value="<?php echo $editing ? esc_attr($editing->post_title) : ''; ?>" required>
             </div>
+
+            <?php
+            $cur_format   = $editing ? (get_post_meta($editing->ID, '_dogology_format', true) ?: 'course') : 'course';
+            $cur_pdf      = $editing ? get_post_meta($editing->ID, '_dogology_ebook_pdf', true) : '';
+            $cur_listed   = $editing ? get_post_meta($editing->ID, '_dogology_public_listed', true) : '';
+            $cur_sales    = $editing ? get_post_meta($editing->ID, '_dogology_sales_url', true) : '';
+            $cur_price    = $editing ? get_post_meta($editing->ID, '_dogology_price_label', true) : '';
+            ?>
+            <div class="dl-form-group">
+                <label for="dl_format">Format</label>
+                <select id="dl_format" name="dl_format">
+                    <option value="course" <?php selected($cur_format, 'course'); ?>>คอร์สเรียน (lessons + player)</option>
+                    <option value="ebook" <?php selected($cur_format, 'ebook'); ?>>E-Book (PDF download)</option>
+                </select>
+            </div>
+
+            <div class="dl-form-group" id="dl_ebook_pdf_group" style="<?php echo $cur_format === 'ebook' ? '' : 'display:none;'; ?>">
+                <label for="dl_ebook_pdf">E-Book PDF</label>
+                <?php if ($cur_pdf): ?>
+                    <p style="margin:0 0 6px;">Current file: <code><?php echo esc_html($cur_pdf); ?></code></p>
+                <?php endif; ?>
+                <input type="file" id="dl_ebook_pdf" name="dl_ebook_pdf" accept="application/pdf">
+                <p class="dl-form-help">Stored in the protected <code>wp-content/dogology-ebooks/</code> dir (never the public media library).
+                    Uploading a new file replaces the old one for ALL buyers on their next download — free silent updates.
+                    The file is probe-tested for stamping compatibility on save.</p>
+            </div>
+
+            <div class="dl-form-group">
+                <label>
+                    <input type="checkbox" name="dl_public_listed" value="1" <?php checked($cur_listed, '1'); ?>>
+                    Show in /my-courses catalog (public listing — unpurchased students see it as locked)
+                </label>
+            </div>
+
+            <div class="dl-form-group">
+                <label for="dl_sales_url">Sales URL <span style="color:#888;font-weight:normal;">(where a locked card's button goes)</span></label>
+                <input type="url" id="dl_sales_url" name="dl_sales_url" value="<?php echo esc_attr($cur_sales); ?>" placeholder="https://dogology.org/ebook-watchdog/">
+            </div>
+
+            <div class="dl-form-group">
+                <label for="dl_price_label">Price Label <span style="color:#888;font-weight:normal;">(display only, e.g. ฿590)</span></label>
+                <input type="text" id="dl_price_label" name="dl_price_label" value="<?php echo esc_attr($cur_price); ?>" placeholder="฿590">
+            </div>
+
+            <script>
+                jQuery(function ($) {
+                    $('#dl_format').on('change', function () {
+                        $('#dl_ebook_pdf_group').toggle($(this).val() === 'ebook');
+                    });
+                });
+            </script>
 
             <?php if ($editing):
                 $linked_here = isset($linked_cohorts_by_course[$editing->ID]) ? $linked_cohorts_by_course[$editing->ID] : [];
@@ -241,10 +332,16 @@ if ($courses) {
                         $linked_here = isset($linked_cohorts_by_course[$course->ID]) ? $linked_cohorts_by_course[$course->ID] : [];
                         $count_lessons = isset($lesson_counts_by_course[$course->ID]) ? $lesson_counts_by_course[$course->ID] : 0;
                         $builder_url = admin_url('admin.php?page=dogology-learning-builder&course_id=' . $course->ID);
+                        $edit_url = admin_url('admin.php?page=dogology-learning-courses&action=edit&id=' . $course->ID);
+                        $is_ebook = get_post_meta($course->ID, '_dogology_format', true) === 'ebook';
+                        $row_url = $is_ebook ? $edit_url : $builder_url;
                         ?>
                         <tr>
                             <td>
-                                <a href="<?php echo esc_url($builder_url); ?>"><strong><?php echo esc_html($course->post_title); ?></strong></a>
+                                <a href="<?php echo esc_url($row_url); ?>"><strong><?php echo esc_html($course->post_title); ?></strong></a>
+                                <?php if ($is_ebook): ?>
+                                    <span class="dl-badge dl-badge-open" style="margin-left:6px;">📖 E-Book</span>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <?php if ($linked_here): ?>
@@ -256,12 +353,14 @@ if ($courses) {
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php echo $count_lessons; ?>
+                                <?php echo $is_ebook ? '—' : $count_lessons; ?>
                             </td>
                             <td>
-                                <a href="<?php echo esc_url($builder_url); ?>"
-                                    class="dl-btn dl-btn-primary dl-btn-sm">Open Builder</a>
-                                <a href="<?php echo admin_url('admin.php?page=dogology-learning-courses&action=edit&id=' . $course->ID); ?>"
+                                <?php if (!$is_ebook): ?>
+                                    <a href="<?php echo esc_url($builder_url); ?>"
+                                        class="dl-btn dl-btn-primary dl-btn-sm">Open Builder</a>
+                                <?php endif; ?>
+                                <a href="<?php echo esc_url($edit_url); ?>"
                                     class="dl-btn dl-btn-secondary dl-btn-sm">✏️</a>
                                 <a href="<?php echo wp_nonce_url(admin_url('admin.php?page=dogology-learning-courses&action=delete&id=' . $course->ID), 'delete_course_' . $course->ID); ?>"
                                     class="dl-btn dl-btn-danger dl-btn-sm" onclick="return confirm('Delete course?');">🗑️</a>

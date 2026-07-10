@@ -1,0 +1,12 @@
+{
+    "name": "dogology/learning",
+    "description": "Dogology Learning plugin - PDF stamping deps (FPDI + tFPDF for per-buyer ebook stamps)",
+    "require": {
+        "php": ">=7.4",
+        "setasign/fpdi": "^2.6",
+        "setasign/tfpdf": "^1.33"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}
