@@ -220,7 +220,10 @@ if ($courses) {
 
             <div class="dl-form-group">
                 <label for="dl_sales_url">Sales URL <span style="color:#888;font-weight:normal;">(where a locked card's button goes)</span></label>
-                <input type="url" id="dl_sales_url" name="dl_sales_url" value="<?php echo esc_attr($cur_sales); ?>" placeholder="https://dogology.org/ebook-watchdog/">
+                <input type="url" id="dl_sales_url" name="dl_sales_url" value="<?php echo esc_attr($cur_sales); ?>"
+                    placeholder="<?php echo $editing && $cur_format === 'ebook' ? esc_attr(Dogology_Ebook::sales_url_for($editing->ID)) : 'https://dogology.org/...'; ?>">
+                <p class="dl-form-help">Courses: required for the locked card to have a button.
+                    E-Books: leave empty to default to <code>/ebook-{slug}/</code> (this book's checkout page) — only fill in to override.</p>
             </div>
 
             <div class="dl-form-group">

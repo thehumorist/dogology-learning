@@ -102,6 +102,29 @@ class Dogology_Ebook
         return get_post_meta($course_id, self::FORMAT_META, true) === 'ebook';
     }
 
+    /**
+     * Sales URL for a locked catalog card. Convention over configuration:
+     * an explicit _dogology_sales_url always wins; an EBOOK with none set
+     * defaults to its checkout page at /ebook-{course-slug}/ (each book gets
+     * its own checkout/mini-landing page named to match). Computed at render
+     * time, never written back — renaming the page/slug can't go stale.
+     * Courses have no sensible default (bespoke landings) → '' when unset.
+     */
+    public static function sales_url_for($course_id)
+    {
+        $explicit = get_post_meta($course_id, '_dogology_sales_url', true);
+        if ($explicit) {
+            return $explicit;
+        }
+        if (self::is_ebook($course_id)) {
+            $post = get_post($course_id);
+            if ($post && $post->post_name) {
+                return home_url('/ebook-' . $post->post_name . '/');
+            }
+        }
+        return '';
+    }
+
     /** Absolute path of a course's source PDF, or '' when unset/missing. */
     public static function source_path($course_id)
     {
