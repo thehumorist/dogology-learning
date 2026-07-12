@@ -380,6 +380,19 @@ if ($mm_table_exists && !empty($current_student->line_uid)) {
 }
 $mm_current = $mm_entries ? $mm_entries[0] : null; // latest entry drives the initial render + badge
 $mm_quiz_url = home_url('/dog-mindset-assessment/');
+// Signed retake link: lets a known student redo the quiz from a normal browser —
+// the mindmap plugin verifies the HMAC, skips its LINE gate, and attaches this
+// line_uid to the new entry (see webIdentity in dogology-mindmap.php). 1h expiry.
+$mm_retake_url = '';
+if ($mm_current && !empty($current_student->line_uid)) {
+    $rk_exp = time() + HOUR_IN_SECONDS;
+    $rk_sig = hash_hmac('sha256', $current_student->line_uid . '|' . $rk_exp, wp_salt('auth'));
+    $mm_retake_url = add_query_arg(array(
+        'retake' => rawurlencode($current_student->line_uid),
+        'rk_exp' => $rk_exp,
+        'rk_sig' => $rk_sig,
+    ), $mm_quiz_url);
+}
 // Radar widget lives in the mindmap plugin (same drawing code as the report).
 $mm_radar_js = defined('WP_PLUGIN_DIR') && file_exists(WP_PLUGIN_DIR . '/dogology-mindmap/assets/js/radar-widget.js')
     ? plugins_url('dogology-mindmap/assets/js/radar-widget.js') . '?v=' . DOGOLOGY_LEARNING_VERSION
@@ -826,10 +839,18 @@ if ($current_lang === 'en') {
                                     <?php echo esc_html($mm_current['date']); ?>
                                 </p>
                             </div>
-                            <a href="<?php echo esc_url($mm_current['report']); ?>" id="mm-entry-report"
-                                class="dl-btn dl-btn--primary">
-                                <?php echo $current_lang === 'th' ? 'ดูผลวิเคราะห์ฉบับเต็ม' : 'View full report'; ?>
-                            </a>
+                            <div style="display:flex;flex-direction:column;gap:10px;flex:0 0 auto;">
+                                <a href="<?php echo esc_url($mm_current['report']); ?>" id="mm-entry-report"
+                                    class="dl-btn dl-btn--primary">
+                                    <?php echo $current_lang === 'th' ? 'ดูผลวิเคราะห์ฉบับเต็ม' : 'View full report'; ?>
+                                </a>
+                                <?php if ($mm_retake_url): ?>
+                                    <a href="<?php echo esc_url($mm_retake_url); ?>"
+                                        class="dl-btn dl-btn--ghost" style="padding:9px 20px;font-size:0.82rem;">
+                                        <?php echo $current_lang === 'th' ? 'ทำแบบประเมินอีกครั้ง' : 'Retake assessment'; ?>
+                                    </a>
+                                <?php endif; ?>
+                            </div>
                         </div>
                     </div>
                 </section>
