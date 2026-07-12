@@ -286,6 +286,11 @@ $my_ebooks = array();
 foreach ($courses as $c) {
     if (Dogology_Ebook::is_ebook($c->id)) {
         $c->download = home_url('/learn/download/' . $c->id);
+        // ebooks render a portrait cover; the landscape placehold.co fallback
+        // from the course build breaks that card — use the grey tile instead
+        if ($c->thumbnail && strpos($c->thumbnail, 'placehold.co') !== false) {
+            $c->thumbnail = '';
+        }
         $my_ebooks[] = $c;
     } else {
         $my_courses[] = $c;
@@ -1052,7 +1057,13 @@ if ($current_lang === 'en') {
                     <!-- Owned ebook (library): portrait cover, no progress, download button -->
                     <div class="bg-white rounded-xl overflow-hidden ring-2 ring-inset ring-[#00AB8E] shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1)] transform hover:scale-[1.02] transition duration-300 flex flex-col h-full group p-0">
                         <div class="relative bg-gray-50 flex items-center justify-center py-6">
-                            <img src="<?php echo esc_url($eb->thumbnail); ?>" class="h-64 w-auto rounded shadow-lg" alt="">
+                            <?php if ($eb->thumbnail): ?>
+                                <img src="<?php echo esc_url($eb->thumbnail); ?>" class="h-64 max-w-[80%] w-auto object-contain rounded shadow-lg" alt="">
+                            <?php else: ?>
+                                <div class="h-64 w-44 rounded bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center shadow">
+                                    <span class="font-kanit text-gray-500 text-sm text-center px-2"><?php echo esc_html($eb->title); ?></span>
+                                </div>
+                            <?php endif; ?>
                             <span class="absolute top-4 left-4 bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md tracking-wider">E-BOOK</span>
                         </div>
                         <div class="p-6 flex flex-col flex-1 text-left">
@@ -1141,7 +1152,7 @@ if ($current_lang === 'en') {
                             <div class="bg-white rounded-xl overflow-hidden shadow-sm flex flex-col h-full group p-0 <?php echo $item->soon ? 'opacity-70 ring-1 ring-inset ring-gray-200' : ($recommended ? 'ring-2 ring-inset ring-[#00AB8E]' : 'ring-1 ring-inset ring-gray-200'); ?>">
                                 <div class="relative bg-gray-50 flex items-center justify-center py-6">
                                     <?php if ($item->thumbnail): ?>
-                                        <img src="<?php echo esc_url($item->thumbnail); ?>" class="h-64 w-auto rounded shadow opacity-85" alt="">
+                                        <img src="<?php echo esc_url($item->thumbnail); ?>" class="h-64 max-w-[80%] w-auto object-contain rounded shadow opacity-85" alt="">
                                     <?php else: ?>
                                         <div class="h-64 w-44 rounded bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
                                             <span class="font-kanit text-gray-400 text-sm text-center px-2"><?php echo esc_html($item->title); ?></span>
