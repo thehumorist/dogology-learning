@@ -447,36 +447,9 @@ if ($current_lang === 'en') {
         href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap"
         rel="stylesheet">
 
-    <!-- Tailwind -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#00AB8E',
-                        secondary: '#0076BA',
-                    },
-                    fontFamily: {
-                        kanit: ['Kanit', 'sans-serif'],
-                        body: ['Noto Sans Thai', 'Kanit', 'sans-serif']
-                    }
-                }
-            }
-        }
-    </script>
     <style>
         html {
             margin-top: 0 !important;
-        }
-
-        body {
-            font-family: 'Noto Sans Thai', 'Kanit', sans-serif;
-            background-color: #f8fafc;
-        }
-
-        .font-kanit {
-            font-family: 'Kanit', sans-serif;
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -488,6 +461,9 @@ if ($current_lang === 'en') {
         }
     </style>
     <?php wp_head(); ?>
+    <!-- Dashboard stylesheet (Premium Minimalist) — AFTER wp_head so theme CSS
+         (zento-child, dogology-theme, etc.) can't repaint our components -->
+    <link rel="stylesheet" href="<?php echo esc_url(DOGOLOGY_LEARNING_URL . 'public/css/dl-dashboard.css?v=' . DOGOLOGY_LEARNING_VERSION); ?>">
     <style>
         /* Precision override for external 72px padding */
         html body {
@@ -588,7 +564,7 @@ if ($current_lang === 'en') {
                             console.error('Bridge error:', err);
                             var _m = document.getElementById('toast-error') || document.createElement('div');
                             _m.id = 'toast-error';
-                            _m.className = 'fixed top-5 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-full shadow-lg z-50 font-kanit';
+                            _m.className = 'dl-toast dl-toast--error';
                             _m.innerText = '<?php echo $current_lang === "th" ? "ไม่สามารถเริ่มการตั้งค่า" : "Failed to start setup"; ?>';
                             document.body.appendChild(_m);
                             setTimeout(function(){ _m.remove(); }, 4000);
@@ -607,7 +583,7 @@ if ($current_lang === 'en') {
                         } else {
                             var _m2 = document.getElementById('toast-error') || document.createElement('div');
                             _m2.id = 'toast-error';
-                            _m2.className = 'fixed top-5 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-full shadow-lg z-50 font-kanit';
+                            _m2.className = 'dl-toast dl-toast--error';
                             _m2.innerText = '<?php echo $current_lang === "th" ? "เบราว์เซอร์นี้ไม่รองรับ Face ID / Touch ID" : "Face ID/Touch ID not supported on this browser."; ?>';
                             document.body.appendChild(_m2);
                             setTimeout(function(){ _m2.remove(); }, 4000);
@@ -618,20 +594,18 @@ if ($current_lang === 'en') {
     </script>
 </head>
 
-<body class="text-[#44403c] antialiased">
+<body class="dl-dash">
 
     <!-- Notifications -->
     <?php if ($message_success): ?>
-        <div id="toast-success"
-            class="fixed top-5 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-6 py-3 rounded-full shadow-lg z-50 font-kanit animate-bounce">
+        <div id="toast-success" class="dl-toast">
             ✅ <?php echo esc_html($message_success); ?>
         </div>
         <script>setTimeout(() => document.getElementById('toast-success').style.display = 'none', 3000);</script>
     <?php endif; ?>
 
     <?php if ($message_error): ?>
-        <div id="toast-error"
-            class="fixed top-5 left-1/2 transform -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-full shadow-lg z-50 font-kanit animate-bounce">
+        <div id="toast-error" class="dl-toast dl-toast--error">
             <?php echo esc_html($message_error); ?>
         </div>
         <script>setTimeout(() => document.getElementById('toast-error').style.display = 'none', 4000);</script>
@@ -639,8 +613,7 @@ if ($current_lang === 'en') {
 
     <!-- Passkey Created Toast (from LIFF Bridge) -->
     <?php if ($show_passkey_toast): ?>
-        <div id="passkey-toast"
-            class="fixed top-5 left-1/2 transform -translate-x-1/2 bg-[#00AB8E] text-white px-6 py-3 rounded-full shadow-lg z-50 font-kanit animate-bounce">
+        <div id="passkey-toast" class="dl-toast">
             ✅
             <?php echo $current_lang === 'th' ? 'เปิดใช้ Face ID สำเร็จ! คุณสามารถล็อกอินได้ทุกอุปกรณ์' : 'Face ID enabled! You can now log in on any device.'; ?>
         </div>
@@ -649,22 +622,18 @@ if ($current_lang === 'en') {
 
     <!-- Verify Email Banner (Soft Gate) -->
     <?php if (!$is_email_verified): ?>
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-            <div
-                class="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between gap-4 font-kanit">
-                <div class="flex items-center gap-3">
-                    <span class="text-2xl">📧</span>
-                    <div>
-                        <p class="text-amber-800 font-medium text-sm">
-                            <?php echo $current_lang === 'th' ? 'กรุณายืนยันอีเมลของคุณ' : 'Please verify your email'; ?>
-                        </p>
-                        <p class="text-amber-600 text-xs">
-                            <?php echo $current_lang === 'th' ? 'เพื่อรับลิงก์เอกสารประกอบและใบรับรองหลังจบคอร์ส' : 'To receive course materials and certificates'; ?>
-                        </p>
+        <div class="dl-banner">
+            <div class="dl-banner-inner">
+                <span style="font-size:1.5rem">📧</span>
+                <div class="dl-banner-text">
+                    <div class="dl-banner-title">
+                        <?php echo $current_lang === 'th' ? 'กรุณายืนยันอีเมลของคุณ' : 'Please verify your email'; ?>
+                    </div>
+                    <div class="dl-banner-sub">
+                        <?php echo $current_lang === 'th' ? 'เพื่อรับลิงก์เอกสารประกอบและใบรับรองหลังจบคอร์ส' : 'To receive course materials and certificates'; ?>
                     </div>
                 </div>
-                <a href="<?php echo home_url('/student-login?step=onboarding'); ?>"
-                    class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-full text-sm font-semibold transition whitespace-nowrap">
+                <a href="<?php echo home_url('/student-login?step=onboarding'); ?>" class="dl-btn dl-btn--primary">
                     <?php echo $current_lang === 'th' ? 'ยืนยันเลย' : 'Verify Now'; ?>
                 </a>
             </div>
@@ -673,31 +642,27 @@ if ($current_lang === 'en') {
 
     <!-- Passkey Upsell Toast (for users without passkey) -->
     <?php if ($is_email_verified && !$has_passkey): ?>
-        <div id="passkey-upsell"
-            class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-white border border-gray-200 rounded-2xl shadow-2xl p-4 z-50 font-kanit max-w-sm w-[90%]">
-            <div class="flex items-start gap-3">
-                <span class="text-3xl">🔐</span>
-                <div class="flex-1">
-                    <p class="text-gray-800 font-semibold text-sm">
+        <div id="passkey-upsell" class="dl-banner">
+            <div class="dl-banner-inner">
+                <span style="font-size:1.5rem">🔐</span>
+                <div class="dl-banner-text">
+                    <div class="dl-banner-title">
                         <?php echo $current_lang === 'th' ? 'ล็อกอินเร็วขึ้นด้วย Face ID' : 'Log in faster with Face ID'; ?>
-                    </p>
-                    <p class="text-gray-500 text-xs mt-1">
+                    </div>
+                    <div class="dl-banner-sub">
                         <?php echo $current_lang === 'th' ? 'ไม่ต้องกรอกรหัสทุกครั้ง ปลอดภัยกว่า' : 'Skip password entry. More secure.'; ?>
-                    </p>
-                    <div class="flex gap-2 mt-3">
-                        <button onclick="window.triggerPasskey && window.triggerPasskey()"
-                            class="bg-[#00AB8E] hover:bg-[#009980] text-white px-4 py-2 rounded-full text-xs font-semibold transition">
-                            <?php echo $current_lang === 'th' ? 'เปิดใช้งาน' : 'Enable'; ?>
-                        </button>
-                        <button onclick="window.dismissPasskeyUpsell && window.dismissPasskeyUpsell()"
-                            class="text-gray-400 hover:text-gray-600 px-3 py-2 text-xs transition">
-                            <?php echo $current_lang === 'th' ? 'ไว้ทีหลัง' : 'Later'; ?>
-                        </button>
                     </div>
                 </div>
+                <button onclick="window.triggerPasskey && window.triggerPasskey()" class="dl-btn dl-btn--primary">
+                    <?php echo $current_lang === 'th' ? 'เปิดใช้งาน' : 'Enable'; ?>
+                </button>
+                <button onclick="window.dismissPasskeyUpsell && window.dismissPasskeyUpsell()"
+                    style="background:none;border:none;cursor:pointer;font-size:0.8rem;color:#B45309;padding:8px 10px">
+                    <?php echo $current_lang === 'th' ? 'ไว้ทีหลัง' : 'Later'; ?>
+                </button>
                 <button onclick="window.dismissPasskeyUpsell && window.dismissPasskeyUpsell()" aria-label="Dismiss"
-                    class="text-gray-300 hover:text-gray-500">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    style="background:none;border:none;cursor:pointer;color:#B45309;padding:4px;display:inline-flex">
+                    <svg style="width:20px;height:20px" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
                         </path>
                     </svg>
@@ -706,134 +671,116 @@ if ($current_lang === 'en') {
         </div>
     <?php endif; ?>
 
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-0 md:py-12">
+    <div class="dl-wrap">
 
         <!-- GLOBAL HEADER -->
-        <header
-            class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-10 flex items-center justify-between relative z-40 mt-0 md:mt-8"
+        <header class="dl-header"
             style="padding-top: max(1rem, env(safe-area-inset-top));">
             <!-- Logo Area (LINKED) -->
-            <a href="<?php echo home_url(); ?>" class="flex items-center gap-2 hover:opacity-80 transition">
+            <a href="<?php echo home_url(); ?>" class="dl-logo">
                 <?php if ($ui_logo_url): ?>
-                    <img src="<?php echo esc_url($ui_logo_url); ?>" alt="Logo" class="h-10 w-auto object-contain">
+                    <img src="<?php echo esc_url($ui_logo_url); ?>" alt="Logo">
                 <?php else: ?>
-                    <div
-                        class="w-8 h-8 bg-[#00AB8E] rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-sm">
+                    <div class="dl-logo-mark">
                         D</div>
-                    <span class="font-bold text-[#44403c] text-lg font-kanit tracking-tight">Dogology</span>
+                    <span class="dl-logo-name">Dogology</span>
                 <?php endif; ?>
             </a>
 
             <!-- Language Switcher (CENTERED) -->
-            <div
-                class="absolute left-1/2 transform -translate-x-1/2 flex items-center gap-2 bg-gray-50 rounded-full px-1 py-1 border border-gray-100">
+            <div class="dl-lang">
                 <a href="<?php echo esc_url(add_query_arg('lang', 'th')); ?>"
-                    class="px-3 py-1 rounded-full text-xs font-bold transition <?php echo $current_lang === 'th' ? 'bg-white shadow-sm text-[#00AB8E]' : 'text-gray-400 hover:text-gray-600'; ?>">
+                    class="<?php echo $current_lang === 'th' ? 'is-active' : ''; ?>">
                     TH
                 </a>
                 <a href="<?php echo esc_url(add_query_arg('lang', 'en')); ?>"
-                    class="px-3 py-1 rounded-full text-xs font-bold transition <?php echo $current_lang === 'en' ? 'bg-white shadow-sm text-[#00AB8E]' : 'text-gray-400 hover:text-gray-600'; ?>">
+                    class="<?php echo $current_lang === 'en' ? 'is-active' : ''; ?>">
                     EN
                 </a>
             </div>
 
             <!-- User Profile Trigger -->
-            <div class="relative">
-                <button onclick="toggleUserMenu()"
-                    class="flex items-center gap-3 cursor-pointer hover:bg-gray-50 pl-2 pr-4 py-1.5 rounded-full border border-transparent hover:border-gray-200 transition group focus:outline-none">
+            <div style="position:relative">
+                <button onclick="toggleUserMenu()" class="dl-user-btn">
                     <?php if ($current_student->profile_picture): ?>
-                        <img src="<?php echo esc_url($current_student->profile_picture); ?>"
-                            class="w-8 h-8 rounded-full border border-white shadow-sm object-cover">
+                        <img src="<?php echo esc_url($current_student->profile_picture); ?>" class="dl-avatar">
                     <?php else: ?>
-                        <div
-                            class="w-8 h-8 rounded-full bg-[#00AB8E] text-white flex items-center justify-center font-bold text-sm shadow-sm">
+                        <div class="dl-avatar">
                             <?php echo $user_initial; ?>
                         </div>
                     <?php endif; ?>
 
-                    <div class="hidden md:flex flex-col text-right">
-                        <span
-                            class="text-xs font-bold text-[#44403c] font-kanit group-hover:text-[#00AB8E]"><?php echo esc_html($user_name); ?></span>
-                    </div>
-                    <span class="text-gray-400 text-xs">▼</span>
+                    <span class="dl-user-name"><?php echo esc_html($user_name); ?></span>
+                    <span class="dl-caret">▼</span>
                 </button>
 
                 <!-- USER MENU DROPDOWN -->
-                <div id="user-dropdown"
-                    class="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden hidden transform origin-top-right transition-all duration-200 z-50 p-0">
+                <div id="user-dropdown" class="dl-dropdown hidden">
                     <!-- Header -->
-                    <div class="bg-gradient-to-r from-[#00AB8E] to-[#0076BA] p-6 text-white text-left">
-                        <div class="flex items-center gap-4">
-                            <div class="relative shrink-0">
-                                <?php if ($current_student->profile_picture): ?>
-                                    <img src="<?php echo esc_url($current_student->profile_picture); ?>"
-                                        class="w-20 h-20 rounded-full border-4 border-white/20 shadow-sm object-cover block">
-                                <?php else: ?>
-                                    <div
-                                        class="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center text-3xl font-bold backdrop-blur-sm border-4 border-white/20">
-                                        <?php echo $user_initial; ?>
-                                    </div>
-                                <?php endif; ?>
+                    <div class="dl-dropdown-head">
+                        <?php if ($current_student->profile_picture): ?>
+                            <img src="<?php echo esc_url($current_student->profile_picture); ?>" class="dl-avatar">
+                        <?php else: ?>
+                            <div class="dl-avatar">
+                                <?php echo $user_initial; ?>
                             </div>
-                            <div class="overflow-hidden">
-                                <h3 class="font-bold font-kanit text-lg leading-tight truncate">
-                                    <?php echo esc_html($user_name); ?>
-                                </h3>
-                                <p class="text-green-50 text-xs opacity-90 truncate">
-                                    <?php echo esc_html($user_email); ?>
-                                </p>
-                            </div>
+                        <?php endif; ?>
+                        <div class="dl-dropdown-who">
+                            <h3 class="dl-dropdown-name">
+                                <?php echo esc_html($user_name); ?>
+                            </h3>
+                            <p class="dl-dropdown-email">
+                                <?php echo esc_html($user_email); ?>
+                            </p>
                         </div>
                     </div>
 
                     <!-- Items (Full Width / No Gap) -->
                     <div>
                         <!-- Edit Profile -->
-                        <button onclick="openProfileModal()"
-                            class="w-full text-left flex items-center gap-3 px-6 py-4 hover:bg-gray-50 transition group border-b border-gray-50">
-                            <div
-                                class="w-8 h-8 rounded-full bg-blue-50 text-[#0076BA] flex items-center justify-center text-sm shrink-0">
-                                ✏️</div>
-                            <div>
-                                <div class="font-bold text-sm font-kanit text-gray-700">
-                                    <?php echo esc_html($t['menu_edit']); ?>
-                                </div>
-                                <div class="text-[10px] text-gray-400"><?php echo esc_html($t['menu_edit_desc']); ?>
+                        <button onclick="openProfileModal()" class="dl-dropdown-item">
+                            <div class="dl-dropdown-item-main">
+                                <div class="dl-dropdown-ic">
+                                    ✏️</div>
+                                <div>
+                                    <div class="dl-dropdown-label">
+                                        <?php echo esc_html($t['menu_edit']); ?>
+                                    </div>
+                                    <div class="dl-dropdown-sub"><?php echo esc_html($t['menu_edit_desc']); ?>
+                                    </div>
                                 </div>
                             </div>
                         </button>
 
                         <!-- FaceID Toggle -->
-                        <div
-                            class="flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition border-b border-gray-50">
-                            <div class="flex items-center gap-3">
-                                <div
-                                    class="w-8 h-8 rounded-full bg-green-50 text-[#00AB8E] flex items-center justify-center text-sm shrink-0">
+                        <div class="dl-dropdown-item">
+                            <div class="dl-dropdown-item-main">
+                                <div class="dl-dropdown-ic">
                                     🔒</div>
                                 <div>
-                                    <div class="font-bold text-sm font-kanit text-gray-700">
+                                    <div class="dl-dropdown-label">
                                         <?php echo esc_html($t['menu_faceid']); ?>
                                     </div>
-                                    <div class="text-[10px] text-gray-400">
+                                    <div class="dl-dropdown-sub">
                                         <?php echo $has_passkey ? esc_html($t['menu_enabled']) : esc_html($t['menu_faceid']); ?>
                                     </div>
                                 </div>
                             </div>
                             <?php if ($has_passkey): ?>
-                                <span
-                                    class="text-[10px] font-bold text-green-600 bg-green-100 px-2 py-1 rounded"><?php echo esc_html($t['menu_enabled']); ?></span>
+                                <span class="dl-chip-on"><?php echo esc_html($t['menu_enabled']); ?></span>
                             <?php else: ?>
-                                <button id="btn-register-passkey-menu"
-                                    class="text-xs bg-[#00AB8E] text-white px-3 py-1.5 rounded-full font-bold hover:bg-[#00967d] transition disabled:opacity-50"><?php echo esc_html($t['menu_enable_btn']); ?></button>
+                                <button id="btn-register-passkey-menu" class="dl-btn dl-btn--primary"
+                                    style="padding:7px 16px;font-size:0.75rem"><?php echo esc_html($t['menu_enable_btn']); ?></button>
                             <?php endif; ?>
                         </div>
 
                         <a href="<?php echo home_url('/student-logout?t=' . time()); ?>"
-                            class="w-full flex items-center gap-3 px-6 py-4 hover:bg-red-50 text-red-500 transition group hover:font-bold">
-                            <div
-                                class="w-8 h-8 rounded-full bg-red-50 group-hover:bg-white text-red-500 flex items-center justify-center text-sm shrink-0">
-                                🚪</div>
-                            <span class="font-bold text-sm font-kanit"><?php echo esc_html($t['menu_logout']); ?></span>
+                            class="dl-dropdown-item dl-dropdown-item--danger">
+                            <div class="dl-dropdown-item-main">
+                                <div class="dl-dropdown-ic">
+                                    🚪</div>
+                                <span class="dl-dropdown-label"><?php echo esc_html($t['menu_logout']); ?></span>
+                            </div>
                         </a>
                     </div>
                 </div>
@@ -845,47 +792,44 @@ if ($current_lang === 'en') {
             <?php if ($mm_current): ?>
                 <!-- has result: real radar (same drawing code as the report) + link to the full report.
                      Multiple entries (several dogs / retakes) → selector switches the whole block client-side. -->
-                <section class="mb-12">
-                    <div class="bg-white rounded-xl overflow-hidden ring-1 ring-gray-100 shadow-[0_10px_15px_-3px_rgba(0,0,0,0.06)]">
-                        <div class="flex flex-col sm:flex-row">
-                            <div class="sm:w-52 bg-gray-50 border-b sm:border-b-0 sm:border-r border-gray-100 flex flex-col items-center justify-center py-5 px-4">
-                                <div class="text-[11px] font-kanit font-bold tracking-widest uppercase text-[#00AB8E] mb-2">
-                                    <?php echo $current_lang === 'th' ? 'MindMap ของน้อง' : 'Your dog\'s MindMap'; ?>
-                                </div>
-                                <canvas id="mm-mini-radar"></canvas>
+                <section class="dl-mm">
+                    <div class="dl-mm-flex">
+                        <div class="dl-mm-radar">
+                            <div class="dl-mm-radar-label">
+                                <?php echo $current_lang === 'th' ? 'MindMap ของน้อง' : 'Your dog\'s MindMap'; ?>
                             </div>
-                            <div class="flex-1 p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4 text-left">
-                                <div class="flex-1">
-                                    <div class="flex items-center gap-3 mb-1">
-                                        <div class="text-xs font-kanit tracking-wide text-[#00AB8E] font-bold">
-                                            <?php echo $current_lang === 'th' ? 'ผลแบบประเมิน MindMap' : 'MindMap Assessment Result'; ?>
-                                        </div>
-                                        <?php if (count($mm_entries) > 1): ?>
-                                            <select id="mm-entry-select"
-                                                class="text-xs font-kanit border border-gray-200 rounded-full px-2 py-1 text-gray-600 bg-gray-50 focus:outline-none focus:border-[#00AB8E] w-auto max-w-[220px]">
-                                                <?php foreach ($mm_entries as $i => $e): ?>
-                                                    <option value="<?php echo $i; ?>">
-                                                        <?php echo esc_html(($e['dog'] ?: '-') . ' · ' . $e['date']); ?>
-                                                    </option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        <?php endif; ?>
+                            <canvas id="mm-mini-radar"></canvas>
+                        </div>
+                        <div class="dl-mm-main">
+                            <div class="dl-mm-info">
+                                <div class="dl-mm-eyebrow-row">
+                                    <div class="dl-eyebrow">
+                                        <?php echo $current_lang === 'th' ? 'ผลแบบประเมิน MindMap' : 'MindMap Assessment Result'; ?>
                                     </div>
-                                    <h2 class="font-kanit font-bold text-xl text-[#44403c]" id="mm-entry-title">
-                                        <?php echo $mm_current['dog'] ? esc_html(($current_lang === 'th' ? 'น้อง' : '') . $mm_current['dog']) . ' ' . ($current_lang === 'th' ? 'คือ' : 'is') . ' ' : ''; ?>
-                                        <?php echo esc_html($mm_current['th']); ?>
-                                        <span class="text-gray-400 font-normal text-base">(<?php echo esc_html($mm_current['en']); ?>)</span>
-                                    </h2>
-                                    <p class="text-sm text-gray-500 mt-1" id="mm-entry-date">
-                                        <?php echo $current_lang === 'th' ? 'ประเมินเมื่อ' : 'Assessed'; ?>
-                                        <?php echo esc_html($mm_current['date']); ?>
-                                    </p>
+                                    <?php if (count($mm_entries) > 1): ?>
+                                        <select id="mm-entry-select" class="dl-mm-select">
+                                            <?php foreach ($mm_entries as $i => $e): ?>
+                                                <option value="<?php echo $i; ?>">
+                                                    <?php echo esc_html(($e['dog'] ?: '-') . ' · ' . $e['date']); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    <?php endif; ?>
                                 </div>
-                                <a href="<?php echo esc_url($mm_current['report']); ?>" id="mm-entry-report"
-                                    class="shrink-0 font-kanit px-5 py-2.5 rounded-full bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white text-sm font-bold shadow-lg hover:opacity-95 transition">
-                                    <?php echo $current_lang === 'th' ? 'ดูผลวิเคราะห์ฉบับเต็ม' : 'View full report'; ?>
-                                </a>
+                                <h2 class="dl-mm-title" id="mm-entry-title">
+                                    <?php echo $mm_current['dog'] ? esc_html(($current_lang === 'th' ? 'น้อง' : '') . $mm_current['dog']) . ' ' . ($current_lang === 'th' ? 'คือ' : 'is') . ' ' : ''; ?>
+                                    <?php echo esc_html($mm_current['th']); ?>
+                                    <small>(<?php echo esc_html($mm_current['en']); ?>)</small>
+                                </h2>
+                                <p class="dl-mm-date" id="mm-entry-date">
+                                    <?php echo $current_lang === 'th' ? 'ประเมินเมื่อ' : 'Assessed'; ?>
+                                    <?php echo esc_html($mm_current['date']); ?>
+                                </p>
                             </div>
+                            <a href="<?php echo esc_url($mm_current['report']); ?>" id="mm-entry-report"
+                                class="dl-btn dl-btn--primary">
+                                <?php echo $current_lang === 'th' ? 'ดูผลวิเคราะห์ฉบับเต็ม' : 'View full report'; ?>
+                            </a>
                         </div>
                     </div>
                 </section>
@@ -903,7 +847,7 @@ if ($current_lang === 'en') {
                                 }
                                 var lead = e.dog ? ((isTh ? 'น้อง' : '') + e.dog + (isTh ? ' คือ ' : ' is ')) : '';
                                 document.getElementById('mm-entry-title').innerHTML =
-                                    lead + e.th + ' <span class="text-gray-400 font-normal text-base">(' + e.en + ')</span>';
+                                    lead + e.th + ' <small>(' + e.en + ')</small>';
                                 document.getElementById('mm-entry-date').textContent =
                                     (isTh ? 'ประเมินเมื่อ ' : 'Assessed ') + e.date;
                                 document.getElementById('mm-entry-report').setAttribute('href', e.report);
@@ -916,9 +860,8 @@ if ($current_lang === 'en') {
                 <?php endif; ?>
             <?php else: ?>
                 <!-- no result yet: placeholder with the landing hero's static radar SVG -->
-                <section class="mb-12">
-                    <div class="bg-white rounded-xl ring-1 ring-dashed ring-gray-200 p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4 text-left shadow-sm">
-                        <div class="w-24 h-24 shrink-0 flex items-center justify-center">
+                <section class="dl-mm dl-mm--empty">
+                        <div class="dl-mm-svg">
                             <svg viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block">
                                 <path d="M 400 400 L 400.00 92.80 A 307.20 307.20 0 0 1 517.56 116.18 Z" fill="#F67A72" stroke="white" stroke-width="2"/>
                                 <path d="M 400 400 L 532.26 80.71 A 345.60 345.60 0 0 1 644.38 155.62 Z" fill="#F06192" stroke="white" stroke-width="2"/>
@@ -942,19 +885,17 @@ if ($current_lang === 'en') {
                                 <circle cx="400" cy="400" r="384.00" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="2"/>
                             </svg>
                         </div>
-                        <div class="flex-1">
-                            <h2 class="font-kanit font-bold text-lg text-[#44403c]">
+                        <div class="dl-mm-info">
+                            <h2>
                                 <?php echo $current_lang === 'th' ? 'ยังไม่รู้ว่าน้องเป็นหมาแบบไหน?' : 'Not sure what kind of dog yours is?'; ?>
                             </h2>
-                            <p class="text-sm text-gray-500 mt-0.5">
+                            <p>
                                 <?php echo $current_lang === 'th' ? 'ทำแบบประเมิน MindMap ฟรี 5 นาที เพื่อดูโปรไฟล์ mindset ของน้อง แล้วเราจะแนะนำสิ่งที่เหมาะกับน้องที่สุด' : 'Take the free 5-minute MindMap assessment to see your dog\'s mindset profile.'; ?>
                             </p>
                         </div>
-                        <a href="<?php echo esc_url($mm_quiz_url); ?>"
-                            class="shrink-0 font-kanit px-5 py-2.5 rounded-full bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white text-sm font-bold shadow-lg hover:opacity-95 transition">
+                        <a href="<?php echo esc_url($mm_quiz_url); ?>" class="dl-btn dl-btn--primary">
                             <?php echo $current_lang === 'th' ? 'ทำแบบประเมินฟรี' : 'Take the free assessment'; ?>
                         </a>
-                    </div>
                 </section>
             <?php endif; ?>
         <?php endif; ?>
@@ -962,89 +903,83 @@ if ($current_lang === 'en') {
         <!-- DASHBOARD CONTENT -->
         <?php if (empty($courses) && !$has_catalog): ?>
             <!-- EMPTY STATE (fallback only: nothing enrolled AND nothing listed) -->
-            <div class="max-w-lg mx-auto mt-12 md:mt-20 px-4">
-                <div class="bg-white rounded-3xl p-8 md:p-12 text-center border border-gray-100 shadow-sm">
-                    <div class="w-20 h-20 bg-[#f0fdf9] rounded-full flex items-center justify-center mx-auto mb-6 text-4xl">🎓</div>
-                    <h2 class="text-2xl md:text-3xl font-bold text-[#44403c] mb-3 font-kanit"><?php echo esc_html($ui_empty_title); ?></h2>
-                    <p class="text-gray-400 text-sm md:text-base mb-8 max-w-sm mx-auto leading-relaxed font-body">
+            <div class="dl-empty">
+                <div class="dl-empty-card">
+                    <div class="dl-empty-ic">🎓</div>
+                    <h2><?php echo esc_html($ui_empty_title); ?></h2>
+                    <p>
                         <?php echo wp_kses_post($ui_empty_desc); ?>
                     </p>
-                    <a href="<?php echo esc_url($ui_btn_link); ?>"
-                        class="inline-flex items-center gap-2 px-8 py-3.5 bg-[#00AB8E] text-white font-bold rounded-full shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition font-kanit text-sm md:text-base">
+                    <a href="<?php echo esc_url($ui_btn_link); ?>" class="dl-btn dl-btn--primary">
                         <?php echo esc_html($ui_btn_text); ?>
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
+                        <svg style="width:16px;height:16px" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>
                     </a>
                 </div>
-                <p class="text-center text-gray-300 text-xs mt-6 font-body">
+                <p class="dl-empty-foot">
                     <?php echo $current_lang === 'th' ? 'หากคุณเพิ่งซื้อคอร์ส กรุณารอสักครู่แล้วรีเฟรชหน้านี้' : 'If you just purchased a course, please wait a moment and refresh this page.'; ?>
                 </p>
             </div>
         <?php else: ?>
             <!-- TITLE BLOCK -->
-            <div class="text-center mb-12">
-                <h2 class="text-3xl md:text-4xl font-bold text-[#44403c] mb-2 font-kanit">
+            <div class="dl-page-title">
+                <h1>
                     <?php echo esc_html($ui_dash_title); ?>
-                </h2>
-                <p class="text-lg text-gray-500 font-body"><?php echo esc_html($ui_dash_subtitle); ?></p>
+                </h1>
+                <p><?php echo esc_html($ui_dash_subtitle); ?></p>
             </div>
 
             <!-- ================= LIBRARY: everything owned, first ================= -->
             <?php if (!empty($library)): ?>
-            <div class="flex items-baseline gap-3 mb-6">
-                <h3 class="font-kanit font-bold text-xl text-[#44403c]"><?php echo $current_lang === 'th' ? 'ของฉัน' : 'My Library'; ?></h3>
-                <div class="flex-1 h-px bg-gray-200"></div>
+            <div class="dl-section-head">
+                <h2><?php echo $current_lang === 'th' ? 'ของฉัน' : 'My Library'; ?></h2>
+                <span class="dl-section-rule"></span>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
+            <div class="dl-grid">
                 <?php foreach ($my_courses as $course): ?>
 
                     <!-- Active/Premium Card Style (Matching Mockup) -->
-                    <div
-                        class="bg-white rounded-xl overflow-hidden ring-2 ring-inset ring-[#00AB8E] shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1)] transform hover:scale-[1.02] transition duration-300 flex flex-col h-full group p-0">
-                        <!-- Thumbnail (Fixed Height h-48 per Mockup) -->
-                        <div class="relative h-48 bg-gray-100 overflow-hidden w-full">
-                            <img src="<?php echo esc_url($course->thumbnail); ?>"
-                                class="w-full h-full object-cover block group-hover:scale-110 transition duration-700">
-                            <!-- Badge (Gradient) -->
+                    <div class="dl-card">
+                        <!-- Thumbnail -->
+                        <div class="dl-card-media">
+                            <img src="<?php echo esc_url($course->thumbnail); ?>">
+                            <!-- Badge -->
                             <?php if ($course->progress >= 100): ?>
-                                <span
-                                    class="absolute top-4 left-4 bg-gradient-to-r from-[#f59e0b] to-[#ef4444] text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md">
+                                <span class="dl-tag dl-tag--done">
                                     🎉 <?php echo $current_lang === 'th' ? 'เรียนจบแล้ว!' : 'Completed!'; ?>
                                 </span>
                             <?php else: ?>
-                                <span
-                                    class="absolute top-4 left-4 bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md">
+                                <span class="dl-tag dl-tag--active">
                                     <?php echo esc_html($t['course_studying']); ?>
                                 </span>
                             <?php endif; ?>
                         </div>
 
-                        <div class="p-6 flex flex-col flex-1 text-left">
-                            <h3 class="text-2xl font-bold text-[#44403c] mb-1 font-kanit leading-tight">
+                        <div class="dl-card-body">
+                            <h3 class="dl-card-title">
                                 <?php echo esc_html($course->title); ?>
                             </h3>
-                            <p class="text-gray-500 mb-6 text-sm line-clamp-2 leading-relaxed">
+                            <p class="dl-card-sub">
                                 <?php echo esc_html($course->subtitle); ?>
                             </p>
 
-                            <div class="mt-auto">
+                            <div class="dl-card-foot">
                                 <!-- Progress Stats -->
-                                <div class="flex justify-between items-end text-xs font-bold text-[#00AB8E] mb-2 font-kanit">
+                                <div class="dl-progress-meta">
                                     <span><?php echo esc_html($t['progress_label']); ?>         <?php echo $course->progress; ?>%</span>
-                                    <span
-                                        class="bg-gray-50 px-2 py-1 rounded"><?php echo $course->completed_lessons; ?>/<?php echo $course->total_lessons . ' ' . esc_html($t['lesson_unit']); ?></span>
+                                    <span class="dl-progress-count"><?php echo $course->completed_lessons; ?>/<?php echo $course->total_lessons . ' ' . esc_html($t['lesson_unit']); ?></span>
                                 </div>
 
                                 <!-- Progress Bar -->
-                                <div class="h-2 w-full bg-gray-100 rounded-full overflow-hidden mb-6">
-                                    <div class="h-full bg-gradient-to-r from-[#00AB8E] to-[#0076BA] rounded-full shadow-sm"
+                                <div class="dl-progress-track">
+                                    <div class="dl-progress-fill"
                                         style="width: <?php echo $course->progress; ?>%">
                                     </div>
                                 </div>
 
-                                <!-- Action Button (Gradient) -->
+                                <!-- Action Button -->
                                 <a href="<?php echo esc_url($course->link); ?>"
-                                    class="block w-full py-3 rounded-full bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white font-bold font-kanit text-center hover:opacity-95 transition shadow-lg tracking-wide">
+                                    class="dl-btn dl-btn--primary dl-btn--block">
                                     <?php echo esc_html($t['course_start']); ?>
                                 </a>
                             </div>
@@ -1055,26 +990,24 @@ if ($current_lang === 'en') {
 
                 <?php foreach ($my_ebooks as $eb): ?>
                     <!-- Owned ebook (library): portrait cover, no progress, download button -->
-                    <div class="bg-white rounded-xl overflow-hidden ring-2 ring-inset ring-[#00AB8E] shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1)] transform hover:scale-[1.02] transition duration-300 flex flex-col h-full group p-0">
-                        <div class="relative bg-gray-50 flex items-center justify-center py-6">
+                    <div class="dl-card">
+                        <div class="dl-card-media dl-card-media--book">
                             <?php if ($eb->thumbnail): ?>
-                                <img src="<?php echo esc_url($eb->thumbnail); ?>" class="h-64 max-w-[80%] w-auto object-contain rounded shadow-lg" alt="">
+                                <img src="<?php echo esc_url($eb->thumbnail); ?>" alt="">
                             <?php else: ?>
-                                <div class="h-64 w-44 rounded bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center shadow">
-                                    <span class="font-kanit text-gray-500 text-sm text-center px-2"><?php echo esc_html($eb->title); ?></span>
-                                </div>
+                                <div class="dl-book-placeholder"><?php echo esc_html($eb->title); ?></div>
                             <?php endif; ?>
-                            <span class="absolute top-4 left-4 bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md tracking-wider">E-BOOK</span>
+                            <span class="dl-tag dl-tag--active">E-BOOK</span>
                         </div>
-                        <div class="p-6 flex flex-col flex-1 text-left">
-                            <h3 class="text-2xl font-bold text-[#44403c] mb-1 font-kanit leading-tight"><?php echo esc_html($eb->title); ?></h3>
-                            <p class="text-gray-500 mb-6 text-sm line-clamp-2 leading-relaxed"><?php echo esc_html($eb->subtitle); ?></p>
-                            <div class="mt-auto">
+                        <div class="dl-card-body">
+                            <h3 class="dl-card-title"><?php echo esc_html($eb->title); ?></h3>
+                            <p class="dl-card-sub"><?php echo esc_html($eb->subtitle); ?></p>
+                            <div class="dl-card-foot">
                                 <a href="<?php echo esc_url($eb->download); ?>"
-                                    class="block w-full py-3 rounded-full bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white font-bold font-kanit text-center hover:opacity-95 transition shadow-lg tracking-wide">
+                                    class="dl-btn dl-btn--primary dl-btn--block">
                                     ⬇ <?php echo $current_lang === 'th' ? 'อ่าน / ดาวน์โหลด' : 'Read / Download'; ?>
                                 </a>
-                                <p class="text-center text-[11px] text-gray-400 mt-2">
+                                <p class="dl-card-hint">
                                     <?php echo $current_lang === 'th' ? 'ไฟล์ PDF ระบุชื่อของเรา · ดาวน์โหลดซ้ำได้เสมอ' : 'Personalized PDF · re-download anytime'; ?>
                                 </p>
                             </div>
@@ -1086,49 +1019,49 @@ if ($current_lang === 'en') {
 
             <!-- ================= STORE: everything not owned ================= -->
             <?php if ($has_catalog): ?>
-                <div class="text-center mb-10 <?php echo !empty($library) ? 'pt-4 border-t border-gray-200' : ''; ?>">
-                    <h3 class="font-kanit font-bold text-2xl text-[#44403c] <?php echo !empty($library) ? 'mt-10' : ''; ?>">
+                <div class="dl-store-head<?php echo empty($library) ? ' dl-store-head--solo' : ''; ?>">
+                    <h2>
                         <?php echo $current_lang === 'th' ? 'คอร์สและ E-Book จาก Dogology' : 'Courses & E-Books from Dogology'; ?>
-                    </h3>
+                    </h2>
                 </div>
 
                 <?php if (!empty($catalog_locked_courses)): ?>
-                    <div class="flex items-baseline gap-3 mb-6">
-                        <h4 class="font-kanit font-bold text-lg text-[#44403c]"><?php echo $current_lang === 'th' ? 'คอร์สเรียน' : 'Courses'; ?></h4>
-                        <div class="flex-1 h-px bg-gray-200"></div>
+                    <div class="dl-section-head">
+                        <h2><?php echo $current_lang === 'th' ? 'คอร์สเรียน' : 'Courses'; ?></h2>
+                        <span class="dl-section-rule"></span>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-14">
+                    <div class="dl-grid">
                         <?php foreach ($catalog_locked_courses as $item): ?>
-                            <div class="bg-white rounded-xl overflow-hidden ring-1 ring-inset ring-gray-200 shadow-sm flex flex-col h-full group p-0 <?php echo $item->soon ? 'opacity-70' : ''; ?>">
-                                <div class="relative h-48 bg-gray-100 overflow-hidden w-full">
+                            <div class="dl-card dl-card--locked<?php echo $item->soon ? ' dl-card--soon' : ''; ?>">
+                                <div class="dl-card-media">
                                     <?php if ($item->thumbnail): ?>
-                                        <img src="<?php echo esc_url($item->thumbnail); ?>" class="w-full h-full object-cover block opacity-90">
+                                        <img src="<?php echo esc_url($item->thumbnail); ?>">
                                     <?php else: ?>
-                                        <div class="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
-                                            <span class="font-kanit text-gray-400"><?php echo esc_html($item->title); ?></span>
+                                        <div style="width:100%;height:100%;background:#F1F5F9;display:flex;align-items:center;justify-content:center">
+                                            <span style="color:#94A3B8"><?php echo esc_html($item->title); ?></span>
                                         </div>
                                     <?php endif; ?>
                                     <?php if ($item->soon): ?>
-                                        <span class="absolute top-4 left-4 bg-gray-400/90 text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md"><?php echo $current_lang === 'th' ? 'เร็ว ๆ นี้' : 'Coming soon'; ?></span>
+                                        <span class="dl-tag dl-tag--soon"><?php echo $current_lang === 'th' ? 'เร็ว ๆ นี้' : 'Coming soon'; ?></span>
                                     <?php else: ?>
-                                        <span class="absolute top-4 left-4 bg-gray-700/80 text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md">🔒 <?php echo $current_lang === 'th' ? 'ยังไม่ได้ลงทะเบียน' : 'Not enrolled'; ?></span>
+                                        <span class="dl-tag dl-tag--locked">🔒 <?php echo $current_lang === 'th' ? 'ยังไม่ได้ลงทะเบียน' : 'Not enrolled'; ?></span>
                                     <?php endif; ?>
                                 </div>
-                                <div class="p-6 flex flex-col flex-1 text-left">
-                                    <h3 class="text-2xl font-bold <?php echo $item->soon ? 'text-gray-400' : 'text-[#44403c]'; ?> mb-1 font-kanit leading-tight"><?php echo esc_html($item->title); ?></h3>
-                                    <p class="<?php echo $item->soon ? 'text-gray-400' : 'text-gray-500'; ?> mb-6 text-sm line-clamp-2 leading-relaxed"><?php echo esc_html($item->subtitle); ?></p>
-                                    <div class="mt-auto">
+                                <div class="dl-card-body">
+                                    <h3 class="dl-card-title"><?php echo esc_html($item->title); ?></h3>
+                                    <p class="dl-card-sub"><?php echo esc_html($item->subtitle); ?></p>
+                                    <div class="dl-card-foot">
                                         <?php if ($item->soon): ?>
-                                            <span class="font-kanit text-sm text-gray-400"><?php echo $current_lang === 'th' ? 'กำลังเตรียม...' : 'In preparation...'; ?></span>
+                                            <span class="dl-soon-note"><?php echo $current_lang === 'th' ? 'กำลังเตรียม...' : 'In preparation...'; ?></span>
                                         <?php else: ?>
                                             <?php if ($item->price_label): ?>
-                                                <div class="flex justify-between items-end mb-4">
-                                                    <span class="font-kanit font-bold text-xl text-[#44403c]"><?php echo esc_html($item->price_label); ?></span>
+                                                <div class="dl-price-row">
+                                                    <span class="dl-price"><?php echo esc_html($item->price_label); ?></span>
                                                 </div>
                                             <?php endif; ?>
                                             <?php if ($item->sales_url): ?>
                                                 <a href="<?php echo esc_url($item->sales_url); ?>"
-                                                    class="block w-full py-3 rounded-full border-2 border-[#00AB8E] text-[#00AB8E] font-bold font-kanit text-center hover:bg-[#00AB8E] hover:text-white transition tracking-wide">
+                                                    class="dl-btn dl-btn--ghost dl-btn--block">
                                                     <?php echo $current_lang === 'th' ? 'ดูรายละเอียดคอร์ส' : 'View course'; ?>
                                                 </a>
                                             <?php endif; ?>
@@ -1141,49 +1074,47 @@ if ($current_lang === 'en') {
                 <?php endif; ?>
 
                 <?php if (!empty($catalog_locked_ebooks)): ?>
-                    <div class="flex items-baseline gap-3 mb-6">
-                        <h4 class="font-kanit font-bold text-lg text-[#44403c]">E-Book</h4>
-                        <span class="font-kanit text-xs text-gray-400"><?php echo $current_lang === 'th' ? 'คู่มือประจำ archetype จากผล MindMap' : 'Archetype guides from your MindMap result'; ?></span>
-                        <div class="flex-1 h-px bg-gray-200"></div>
+                    <div class="dl-section-head">
+                        <h2>E-Book</h2>
+                        <span class="dl-section-note"><?php echo $current_lang === 'th' ? 'คู่มือประจำ archetype จากผล MindMap' : 'Archetype guides from your MindMap result'; ?></span>
+                        <span class="dl-section-rule"></span>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div class="dl-grid">
                         <?php foreach ($catalog_locked_ebooks as $item): ?>
                             <?php $recommended = !$item->soon && $mm_current && $item->archetype && $item->archetype === $mm_current['arch']; ?>
-                            <div class="bg-white rounded-xl overflow-hidden shadow-sm flex flex-col h-full group p-0 <?php echo $item->soon ? 'opacity-70 ring-1 ring-inset ring-gray-200' : ($recommended ? 'ring-2 ring-inset ring-[#00AB8E]' : 'ring-1 ring-inset ring-gray-200'); ?>">
-                                <div class="relative bg-gray-50 flex items-center justify-center py-6">
+                            <div class="dl-card <?php echo $item->soon ? 'dl-card--locked dl-card--soon' : ($recommended ? 'dl-card--recommended' : 'dl-card--locked'); ?>">
+                                <div class="dl-card-media dl-card-media--book">
                                     <?php if ($item->thumbnail): ?>
-                                        <img src="<?php echo esc_url($item->thumbnail); ?>" class="h-64 max-w-[80%] w-auto object-contain rounded shadow opacity-85" alt="">
+                                        <img src="<?php echo esc_url($item->thumbnail); ?>" alt="">
                                     <?php else: ?>
-                                        <div class="h-64 w-44 rounded bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
-                                            <span class="font-kanit text-gray-400 text-sm text-center px-2"><?php echo esc_html($item->title); ?></span>
-                                        </div>
+                                        <div class="dl-book-placeholder"><?php echo esc_html($item->title); ?></div>
                                     <?php endif; ?>
                                     <?php if ($item->soon): ?>
-                                        <span class="absolute top-4 left-4 bg-gray-400/90 text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md"><?php echo $current_lang === 'th' ? 'เร็ว ๆ นี้' : 'Coming soon'; ?></span>
+                                        <span class="dl-tag dl-tag--soon"><?php echo $current_lang === 'th' ? 'เร็ว ๆ นี้' : 'Coming soon'; ?></span>
                                     <?php elseif ($recommended): ?>
-                                        <span class="absolute top-4 left-4 bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md">
+                                        <span class="dl-tag dl-tag--recommended">
                                             ★ <?php echo $current_lang === 'th' ? 'แนะนำสำหรับ' . $mm_current['th'] : 'For your ' . $mm_current['en']; ?>
                                         </span>
                                     <?php else: ?>
-                                        <span class="absolute top-4 left-4 bg-gray-700/80 text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md">🔒 E-BOOK</span>
+                                        <span class="dl-tag dl-tag--locked">🔒 E-BOOK</span>
                                     <?php endif; ?>
                                 </div>
-                                <div class="p-6 flex flex-col flex-1 text-left">
-                                    <h3 class="text-2xl font-bold <?php echo $item->soon ? 'text-gray-400' : 'text-[#44403c]'; ?> mb-1 font-kanit leading-tight"><?php echo esc_html($item->title); ?></h3>
-                                    <p class="<?php echo $item->soon ? 'text-gray-400' : 'text-gray-500'; ?> mb-6 text-sm line-clamp-2 leading-relaxed"><?php echo esc_html($item->subtitle); ?></p>
-                                    <div class="mt-auto">
+                                <div class="dl-card-body">
+                                    <h3 class="dl-card-title"><?php echo esc_html($item->title); ?></h3>
+                                    <p class="dl-card-sub"><?php echo esc_html($item->subtitle); ?></p>
+                                    <div class="dl-card-foot">
                                         <?php if ($item->soon): ?>
-                                            <span class="font-kanit text-sm text-gray-400"><?php echo $current_lang === 'th' ? 'กำลังเขียน...' : 'Being written...'; ?></span>
+                                            <span class="dl-soon-note"><?php echo $current_lang === 'th' ? 'กำลังเขียน...' : 'Being written...'; ?></span>
                                         <?php else: ?>
                                             <?php if ($item->price_label): ?>
-                                                <div class="flex justify-between items-end mb-4">
-                                                    <span class="font-kanit font-bold text-xl text-[#44403c]"><?php echo esc_html($item->price_label); ?></span>
-                                                    <span class="text-xs text-gray-400">PDF</span>
+                                                <div class="dl-price-row">
+                                                    <span class="dl-price"><?php echo esc_html($item->price_label); ?></span>
+                                                    <span class="dl-price-note">PDF</span>
                                                 </div>
                                             <?php endif; ?>
                                             <?php if ($item->sales_url): ?>
                                                 <a href="<?php echo esc_url($item->sales_url); ?>"
-                                                    class="block w-full py-3 rounded-full <?php echo $recommended ? 'bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white shadow-lg hover:opacity-95' : 'border-2 border-[#00AB8E] text-[#00AB8E] hover:bg-[#00AB8E] hover:text-white'; ?> font-bold font-kanit text-center transition tracking-wide">
+                                                    class="dl-btn <?php echo $recommended ? 'dl-btn--primary' : 'dl-btn--ghost'; ?> dl-btn--block">
                                                     <?php echo $current_lang === 'th' ? 'ดูรายละเอียด / สั่งซื้อ' : 'Details / Buy'; ?>
                                                 </a>
                                             <?php endif; ?>
@@ -1200,67 +1131,59 @@ if ($current_lang === 'en') {
     </div>
 
     <!-- PROFILE MODAL -->
-    <div id="profile-modal"
-        class="fixed inset-0 bg-black/50 z-[100] hidden items-center justify-center p-4 backdrop-blur-sm">
-        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-[fadeIn_0.2s_ease-out]">
-            <div class="bg-gray-50 border-b border-gray-100 p-4 flex justify-between items-center">
-                <h3 class="font-bold text-lg font-kanit text-[#44403c]"><?php echo esc_html($t['modal_title']); ?></h3>
+    <div id="profile-modal" class="dl-modal-backdrop is-open hidden">
+        <div class="dl-modal">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <h3><?php echo esc_html($t['modal_title']); ?></h3>
                 <button onclick="closeProfileModal()" aria-label="Close"
-                    class="text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-200 transition">✕</button>
+                    style="background:none;border:none;cursor:pointer;font-size:1rem;color:#64748B;width:32px;height:32px;border-radius:50%">✕</button>
             </div>
 
-            <form method="post" enctype="multipart/form-data" class="p-6 space-y-4" onsubmit="var b=this.querySelector('button[type=submit]'); b.disabled=true; b.innerText='...'">
+            <form method="post" enctype="multipart/form-data" onsubmit="var b=this.querySelector('button[type=submit]'); b.disabled=true; b.innerText='...'">
                 <input type="hidden" name="action" value="update_profile">
                 <input type="hidden" name="_dl_nonce" value="<?php echo wp_create_nonce('dl_dashboard_action'); ?>">
 
                 <!-- Avatar Upload -->
-                <div class="flex flex-col items-center gap-4 mb-6">
-                    <div class="relative group cursor-pointer"
-                        onclick="document.getElementById('profile_image').click()">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin:10px 0 20px">
+                    <div style="position:relative;cursor:pointer"
+                        onclick="document.getElementById('profile_image').click()"
+                        onmouseover="this.lastElementChild.style.opacity='1'"
+                        onmouseout="this.lastElementChild.style.opacity='0'">
                         <?php if ($current_student->profile_picture): ?>
                             <img id="preview_avatar" src="<?php echo esc_url($current_student->profile_picture); ?>"
-                                class="w-24 h-24 rounded-full object-cover border-4 border-white shadow-md">
+                                class="dl-avatar" style="width:96px;height:96px">
                         <?php else: ?>
-                            <div id="preview_avatar_div"
-                                class="w-24 h-24 rounded-full bg-[#00AB8E] text-white flex items-center justify-center text-3xl font-bold shadow-md">
+                            <div id="preview_avatar_div" class="dl-avatar" style="width:96px;height:96px;font-size:1.9rem">
                                 <?php echo $user_initial; ?>
                             </div>
                         <?php endif; ?>
-                        <div
-                            class="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                            <span
-                                class="text-white text-xs font-bold"><?php echo esc_html($t['modal_upload_hint']); ?></span>
+                        <div style="position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.3);border-radius:50%;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity 0.2s ease">
+                            <span style="color:#fff;font-size:0.72rem;font-weight:700"><?php echo esc_html($t['modal_upload_hint']); ?></span>
                         </div>
                     </div>
                     <input type="file" name="profile_image" id="profile_image" class="hidden" accept="image/*"
                         onchange="previewImage(this)">
-                    <p class="text-xs text-gray-400"><?php echo esc_html($t['modal_upload_hint']); ?></p>
+                    <p style="font-size:0.72rem;color:#94A3B8"><?php echo esc_html($t['modal_upload_hint']); ?></p>
                 </div>
 
                 <div>
-                    <label
-                        class="block text-sm font-bold text-gray-700 mb-1"><?php echo esc_html($t['label_name']); ?></label>
+                    <label><?php echo esc_html($t['label_name']); ?></label>
                     <input type="text" name="display_name"
                         value="<?php echo esc_attr($current_student->display_name); ?>"
-                        class="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:border-[#00AB8E] font-kanit"
                         required>
                 </div>
 
                 <div>
-                    <label
-                        class="block text-sm font-bold text-gray-700 mb-1"><?php echo esc_html($t['label_email']); ?></label>
+                    <label><?php echo esc_html($t['label_email']); ?></label>
                     <input type="email" name="email" value="<?php echo esc_attr($current_student->email); ?>"
-                        class="w-full border border-gray-200 rounded-lg px-4 py-2.5 focus:outline-none focus:border-[#00AB8E] font-kanit <?php echo $is_email_verified ? 'bg-gray-50' : ''; ?>"
+                        <?php echo $is_email_verified ? 'style="background:#F8FAFC"' : ''; ?>
                         required>
                     <?php if ($is_email_verified): ?>
-                        <p class="text-[10px] text-amber-500 mt-1"><?php echo $current_lang === 'th' ? '⚠ การเปลี่ยนอีเมลจะต้องยืนยันใหม่' : '⚠ Changing email will require re-verification'; ?></p>
+                        <p style="font-size:0.68rem;color:#D97706;margin-top:4px"><?php echo $current_lang === 'th' ? '⚠ การเปลี่ยนอีเมลจะต้องยืนยันใหม่' : '⚠ Changing email will require re-verification'; ?></p>
                     <?php endif; ?>
                 </div>
 
-                <div class="pt-4">
-                    <button type="submit"
-                        class="w-full bg-[#00AB8E] text-white font-bold py-3 rounded-xl hover:bg-[#00967d] transition shadow-lg"><?php echo esc_html($t['modal_save']); ?></button>
-                </div>
+                <button type="submit" class="dl-btn dl-btn--primary dl-btn--block"><?php echo esc_html($t['modal_save']); ?></button>
             </form>
         </div>
     </div>
@@ -1308,7 +1231,8 @@ if ($current_lang === 'en') {
                             var newImg = document.createElement('img');
                             newImg.id = 'preview_avatar';
                             newImg.src = e.target.result;
-                            newImg.className = 'w-24 h-24 rounded-full object-cover border-4 border-white shadow-md';
+                            newImg.className = 'dl-avatar';
+                            newImg.style.cssText = 'width:96px;height:96px';
                             div.parentNode.replaceChild(newImg, div);
                         }
                     }

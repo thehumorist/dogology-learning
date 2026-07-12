@@ -3,7 +3,7 @@
  * Plugin Name: Dogology Learning
  * Plugin URI:  https://dogology.org
  * Description: The core learning platform for Dogology. Manages courses, students (custom auth), and progress tracking.
- * Version:     1.3.1
+ * Version:     1.4.0
  * Author:      Dogology Dev
  * Text Domain: dogology-learning
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('DOGOLOGY_LEARNING_VERSION', '1.3.1');
+define('DOGOLOGY_LEARNING_VERSION', '1.4.0');
 define('DOGOLOGY_LEARNING_PATH', plugin_dir_path(__FILE__));
 define('DOGOLOGY_LEARNING_URL', plugin_dir_url(__FILE__));
 
