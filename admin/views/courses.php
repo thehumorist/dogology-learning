@@ -46,9 +46,13 @@ if (isset($_POST['dl_save_course']) && wp_verify_nonce($_POST['dl_course_nonce']
         // --- Format + catalog fields (ebook support) ---
         $format = (isset($_POST['dl_format']) && $_POST['dl_format'] === 'ebook') ? 'ebook' : 'course';
         update_post_meta($pid, '_dogology_format', $format);
-        update_post_meta($pid, '_dogology_public_listed', isset($_POST['dl_public_listed']) ? '1' : '');
+        $listed = in_array($_POST['dl_public_listed'] ?? '', array('1', 'soon'), true) ? $_POST['dl_public_listed'] : '';
+        update_post_meta($pid, '_dogology_public_listed', $listed);
         update_post_meta($pid, '_dogology_sales_url', esc_url_raw($_POST['dl_sales_url'] ?? ''));
         update_post_meta($pid, '_dogology_price_label', sanitize_text_field($_POST['dl_price_label'] ?? ''));
+        $arch = $_POST['dl_archetype'] ?? '';
+        $valid_arch = array('', 'watchdog', 'rocket', 'shadow', 'indy', 'hothead', 'balanced');
+        update_post_meta($pid, '_dogology_archetype', in_array($arch, $valid_arch, true) ? $arch : '');
 
         // --- Ebook PDF upload → protected dir (never the public media library) ---
         if ($format === 'ebook' && !empty($_FILES['dl_ebook_pdf']['name'])) {
@@ -212,10 +216,26 @@ if ($courses) {
             </div>
 
             <div class="dl-form-group">
-                <label>
-                    <input type="checkbox" name="dl_public_listed" value="1" <?php checked($cur_listed, '1'); ?>>
-                    Show in /my-courses catalog (public listing — unpurchased students see it as locked)
-                </label>
+                <label for="dl_public_listed">Catalog visibility (/my-courses)</label>
+                <select id="dl_public_listed" name="dl_public_listed">
+                    <option value="" <?php selected($cur_listed, ''); ?>>Hidden — enrolled students only</option>
+                    <option value="1" <?php selected($cur_listed, '1'); ?>>Listed — everyone sees it (locked until purchased)</option>
+                    <option value="soon" <?php selected($cur_listed, 'soon'); ?>>Coming soon — teaser card, no buy button</option>
+                </select>
+            </div>
+
+            <div class="dl-form-group">
+                <label for="dl_archetype">MindMap archetype <span style="color:#888;font-weight:normal;">(for the "แนะนำสำหรับ..." badge on matching students' dashboards)</span></label>
+                <?php $cur_arch = $editing ? get_post_meta($editing->ID, '_dogology_archetype', true) : ''; ?>
+                <select id="dl_archetype" name="dl_archetype">
+                    <option value="" <?php selected($cur_arch, ''); ?>>— none —</option>
+                    <option value="watchdog" <?php selected($cur_arch, 'watchdog'); ?>>หมาระแวง (Watchdog)</option>
+                    <option value="rocket" <?php selected($cur_arch, 'rocket'); ?>>หมาจรวด (Rocket)</option>
+                    <option value="shadow" <?php selected($cur_arch, 'shadow'); ?>>หมาเงา (Shadow)</option>
+                    <option value="indy" <?php selected($cur_arch, 'indy'); ?>>หมาอินดี้ (Indy)</option>
+                    <option value="hothead" <?php selected($cur_arch, 'hothead'); ?>>หมาใจร้อน (Hothead)</option>
+                    <option value="balanced" <?php selected($cur_arch, 'balanced'); ?>>พื้นฐานแน่น (Balanced)</option>
+                </select>
             </div>
 
             <div class="dl-form-group">

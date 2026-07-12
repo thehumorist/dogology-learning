@@ -292,8 +292,8 @@ foreach ($courses as $c) {
     }
 }
 
-// 3c. Catalog — every publicly-listed course/ebook; unpurchased ones render locked.
-// (_dogology_public_listed is the per-product visibility ticker, set in Courses admin.)
+// 3c. Store catalog — publicly-listed ('1') and coming-soon ('soon') items the
+// student does NOT own. Owned items never appear here (library shows them first).
 $catalog_locked_courses = array();
 $catalog_locked_ebooks = array();
 $listed = get_posts(array(
@@ -302,20 +302,26 @@ $listed = get_posts(array(
     'numberposts' => -1,
     'orderby' => 'title',
     'order' => 'ASC',
-    'meta_key' => '_dogology_public_listed',
-    'meta_value' => '1',
+    'meta_query' => array(array(
+        'key' => '_dogology_public_listed',
+        'value' => array('1', 'soon'),
+        'compare' => 'IN',
+    )),
 ));
 foreach ($listed as $p) {
     if (in_array((int) $p->ID, $enrolled_ids, true)) {
-        continue; // already shown as an enrolled card
+        continue; // owned — lives in the library section
     }
+    $vis = get_post_meta($p->ID, '_dogology_public_listed', true);
     $item = (object) array(
         'id' => $p->ID,
         'title' => $p->post_title,
         'subtitle' => get_post_meta($p->ID, '_dogology_subtitle', true) ?: ($p->post_excerpt ?: ''),
-        'thumbnail' => get_the_post_thumbnail_url($p->ID, 'large') ?: 'https://placehold.co/600x400/94a3b8/ffffff?text=' . urlencode($p->post_title),
+        'thumbnail' => get_the_post_thumbnail_url($p->ID, 'large') ?: '',
         'price_label' => get_post_meta($p->ID, '_dogology_price_label', true),
         'sales_url' => Dogology_Ebook::sales_url_for($p->ID),
+        'soon' => ($vis === 'soon'),
+        'archetype' => get_post_meta($p->ID, '_dogology_archetype', true),
     );
     if (Dogology_Ebook::is_ebook($p->ID)) {
         $catalog_locked_ebooks[] = $item;
@@ -323,28 +329,16 @@ foreach ($listed as $p) {
         $catalog_locked_courses[] = $item;
     }
 }
-$has_ebook_section = !empty($my_ebooks) || !empty($catalog_locked_ebooks);
 $has_catalog = !empty($catalog_locked_courses) || !empty($catalog_locked_ebooks);
+$library = array_merge($my_courses, $my_ebooks); // owned items, courses first
 
 global $wpdb;
 // 3d. MindMap result — latest entry for this student's LINE id. Direct table read
 // with an existence guard so the dashboard degrades gracefully if the mindmap
 // plugin is absent. Email fallback skipped (not indexed; rare case).
-$mm_entry = null;
-$mm_scores = null;
+$mm_entries = array();
 $mm_table = $wpdb->prefix . 'dogology_mindmap_entries';
 $mm_table_exists = (bool) $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $mm_table));
-if ($mm_table_exists && !empty($current_student->line_uid)) {
-    $mm_entry = $wpdb->get_row($wpdb->prepare(
-        "SELECT id, archetype_id, access_token, score_data, dog_name, created_at
-         FROM $mm_table WHERE user_id = %s ORDER BY created_at DESC LIMIT 1",
-        $current_student->line_uid
-    ));
-    if ($mm_entry && $mm_entry->score_data) {
-        $decoded = json_decode($mm_entry->score_data, true);
-        $mm_scores = is_array($decoded) ? $decoded : null;
-    }
-}
 // Local archetype name map — deliberately NOT coupled to mindmap plugin classes.
 $mm_archetypes = array(
     'watchdog' => array('th' => 'หมาระแวง', 'en' => 'Reactive Watchdog'),
@@ -354,8 +348,32 @@ $mm_archetypes = array(
     'hothead'  => array('th' => 'หมาใจร้อน', 'en' => 'Hothead'),
     'balanced' => array('th' => 'พื้นฐานแน่น', 'en' => 'Balanced'),
 );
-$mm_name = ($mm_entry && isset($mm_archetypes[$mm_entry->archetype_id])) ? $mm_archetypes[$mm_entry->archetype_id] : null;
-$mm_report_url = $mm_entry ? home_url('/dog-mindset-assessment/?entry_id=' . intval($mm_entry->id) . '&token=' . rawurlencode($mm_entry->access_token)) : '';
+if ($mm_table_exists && !empty($current_student->line_uid)) {
+    // Up to 10 most-recent entries: one LINE account can hold several dogs, or
+    // retakes of the same dog. The block shows the latest and offers a selector.
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT id, archetype_id, access_token, score_data, dog_name, created_at
+         FROM $mm_table WHERE user_id = %s ORDER BY created_at DESC LIMIT 10",
+        $current_student->line_uid
+    ));
+    foreach ((array) $rows as $r) {
+        if (!isset($mm_archetypes[$r->archetype_id])) {
+            continue; // pre-archetype legacy rows can't render the block meaningfully
+        }
+        $decoded = $r->score_data ? json_decode($r->score_data, true) : null;
+        $mm_entries[] = array(
+            'id'      => (int) $r->id,
+            'dog'     => (string) $r->dog_name,
+            'arch'    => $r->archetype_id,
+            'th'      => $mm_archetypes[$r->archetype_id]['th'],
+            'en'      => $mm_archetypes[$r->archetype_id]['en'],
+            'date'    => date_i18n('j M Y', strtotime($r->created_at)),
+            'report'  => home_url('/dog-mindset-assessment/?entry_id=' . intval($r->id) . '&token=' . rawurlencode($r->access_token)),
+            'scores'  => is_array($decoded) ? $decoded : null,
+        );
+    }
+}
+$mm_current = $mm_entries ? $mm_entries[0] : null; // latest entry drives the initial render + badge
 $mm_quiz_url = home_url('/dog-mindset-assessment/');
 // Radar widget lives in the mindmap plugin (same drawing code as the report).
 $mm_radar_js = defined('WP_PLUGIN_DIR') && file_exists(WP_PLUGIN_DIR . '/dogology-mindmap/assets/js/radar-widget.js')
@@ -819,8 +837,9 @@ if ($current_lang === 'en') {
 
         <!-- ================= MINDMAP BLOCK ================= -->
         <?php if ($mm_table_exists): ?>
-            <?php if ($mm_entry && $mm_name): ?>
-                <!-- has result: real radar (same drawing code as the report) + link to the full report -->
+            <?php if ($mm_current): ?>
+                <!-- has result: real radar (same drawing code as the report) + link to the full report.
+                     Multiple entries (several dogs / retakes) → selector switches the whole block client-side. -->
                 <section class="mb-12">
                     <div class="bg-white rounded-xl overflow-hidden ring-1 ring-gray-100 shadow-[0_10px_15px_-3px_rgba(0,0,0,0.06)]">
                         <div class="flex flex-col sm:flex-row">
@@ -832,20 +851,32 @@ if ($current_lang === 'en') {
                             </div>
                             <div class="flex-1 p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center gap-4 text-left">
                                 <div class="flex-1">
-                                    <div class="text-xs font-kanit tracking-wide text-[#00AB8E] font-bold mb-1">
-                                        <?php echo $current_lang === 'th' ? 'ผลแบบประเมิน MindMap' : 'MindMap Assessment Result'; ?>
+                                    <div class="flex items-center gap-3 mb-1">
+                                        <div class="text-xs font-kanit tracking-wide text-[#00AB8E] font-bold">
+                                            <?php echo $current_lang === 'th' ? 'ผลแบบประเมิน MindMap' : 'MindMap Assessment Result'; ?>
+                                        </div>
+                                        <?php if (count($mm_entries) > 1): ?>
+                                            <select id="mm-entry-select"
+                                                class="text-xs font-kanit border border-gray-200 rounded-full px-2 py-1 text-gray-600 bg-gray-50 focus:outline-none focus:border-[#00AB8E] w-auto max-w-[220px]">
+                                                <?php foreach ($mm_entries as $i => $e): ?>
+                                                    <option value="<?php echo $i; ?>">
+                                                        <?php echo esc_html(($e['dog'] ?: '-') . ' · ' . $e['date']); ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        <?php endif; ?>
                                     </div>
-                                    <h2 class="font-kanit font-bold text-xl text-[#44403c]">
-                                        <?php echo $mm_entry->dog_name ? esc_html(($current_lang === 'th' ? 'น้อง' : '') . $mm_entry->dog_name) . ' ' . ($current_lang === 'th' ? 'คือ' : 'is') . ' ' : ''; ?>
-                                        <?php echo esc_html($mm_name['th']); ?>
-                                        <span class="text-gray-400 font-normal text-base">(<?php echo esc_html($mm_name['en']); ?>)</span>
+                                    <h2 class="font-kanit font-bold text-xl text-[#44403c]" id="mm-entry-title">
+                                        <?php echo $mm_current['dog'] ? esc_html(($current_lang === 'th' ? 'น้อง' : '') . $mm_current['dog']) . ' ' . ($current_lang === 'th' ? 'คือ' : 'is') . ' ' : ''; ?>
+                                        <?php echo esc_html($mm_current['th']); ?>
+                                        <span class="text-gray-400 font-normal text-base">(<?php echo esc_html($mm_current['en']); ?>)</span>
                                     </h2>
-                                    <p class="text-sm text-gray-500 mt-1">
+                                    <p class="text-sm text-gray-500 mt-1" id="mm-entry-date">
                                         <?php echo $current_lang === 'th' ? 'ประเมินเมื่อ' : 'Assessed'; ?>
-                                        <?php echo esc_html(date_i18n('j M Y', strtotime($mm_entry->created_at))); ?>
+                                        <?php echo esc_html($mm_current['date']); ?>
                                     </p>
                                 </div>
-                                <a href="<?php echo esc_url($mm_report_url); ?>"
+                                <a href="<?php echo esc_url($mm_current['report']); ?>" id="mm-entry-report"
                                     class="shrink-0 font-kanit px-5 py-2.5 rounded-full bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white text-sm font-bold shadow-lg hover:opacity-95 transition">
                                     <?php echo $current_lang === 'th' ? 'ดูผลวิเคราะห์ฉบับเต็ม' : 'View full report'; ?>
                                 </a>
@@ -853,14 +884,28 @@ if ($current_lang === 'en') {
                         </div>
                     </div>
                 </section>
-                <?php if ($mm_radar_js && $mm_scores): ?>
+                <?php if ($mm_radar_js): ?>
                     <script src="<?php echo esc_url($mm_radar_js); ?>"></script>
                     <script>
                         (function () {
-                            if (window.DogologyRadar) {
-                                DogologyRadar.render(document.getElementById('mm-mini-radar'),
-                                    <?php echo wp_json_encode($mm_scores); ?>, { size: 150 });
+                            var entries = <?php echo wp_json_encode($mm_entries); ?>;
+                            var isTh = <?php echo $current_lang === 'th' ? 'true' : 'false'; ?>;
+                            function show(i) {
+                                var e = entries[i];
+                                if (!e) return;
+                                if (window.DogologyRadar && e.scores) {
+                                    DogologyRadar.render(document.getElementById('mm-mini-radar'), e.scores, { size: 150 });
+                                }
+                                var lead = e.dog ? ((isTh ? 'น้อง' : '') + e.dog + (isTh ? ' คือ ' : ' is ')) : '';
+                                document.getElementById('mm-entry-title').innerHTML =
+                                    lead + e.th + ' <span class="text-gray-400 font-normal text-base">(' + e.en + ')</span>';
+                                document.getElementById('mm-entry-date').textContent =
+                                    (isTh ? 'ประเมินเมื่อ ' : 'Assessed ') + e.date;
+                                document.getElementById('mm-entry-report').setAttribute('href', e.report);
                             }
+                            var sel = document.getElementById('mm-entry-select');
+                            if (sel) sel.addEventListener('change', function () { show(parseInt(this.value, 10)); });
+                            show(0);
                         })();
                     </script>
                 <?php endif; ?>
@@ -938,9 +983,10 @@ if ($current_lang === 'en') {
                 <p class="text-lg text-gray-500 font-body"><?php echo esc_html($ui_dash_subtitle); ?></p>
             </div>
 
-            <!-- ================= COURSES SECTION ================= -->
+            <!-- ================= LIBRARY: everything owned, first ================= -->
+            <?php if (!empty($library)): ?>
             <div class="flex items-baseline gap-3 mb-6">
-                <h3 class="font-kanit font-bold text-xl text-[#44403c]"><?php echo $current_lang === 'th' ? 'คอร์สเรียน' : 'Courses'; ?></h3>
+                <h3 class="font-kanit font-bold text-xl text-[#44403c]"><?php echo $current_lang === 'th' ? 'ของฉัน' : 'My Library'; ?></h3>
                 <div class="flex-1 h-px bg-gray-200"></div>
             </div>
 
@@ -1002,96 +1048,141 @@ if ($current_lang === 'en') {
 
                 <?php endforeach; ?>
 
-                <?php foreach ($catalog_locked_courses as $item): ?>
-                    <!-- Locked course card: grey ring, lock badge, price + sales link -->
-                    <div class="bg-white rounded-xl overflow-hidden ring-1 ring-inset ring-gray-200 shadow-sm flex flex-col h-full group p-0">
-                        <div class="relative h-48 bg-gray-100 overflow-hidden w-full">
-                            <img src="<?php echo esc_url($item->thumbnail); ?>" class="w-full h-full object-cover block opacity-90">
-                            <span class="absolute top-4 left-4 bg-gray-700/80 text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md">
-                                🔒 <?php echo $current_lang === 'th' ? 'ยังไม่ได้ลงทะเบียน' : 'Not enrolled'; ?>
-                            </span>
+                <?php foreach ($my_ebooks as $eb): ?>
+                    <!-- Owned ebook (library): portrait cover, no progress, download button -->
+                    <div class="bg-white rounded-xl overflow-hidden ring-2 ring-inset ring-[#00AB8E] shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1)] transform hover:scale-[1.02] transition duration-300 flex flex-col h-full group p-0">
+                        <div class="relative bg-gray-50 flex items-center justify-center py-6">
+                            <img src="<?php echo esc_url($eb->thumbnail); ?>" class="h-64 w-auto rounded shadow-lg" alt="">
+                            <span class="absolute top-4 left-4 bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md tracking-wider">E-BOOK</span>
                         </div>
                         <div class="p-6 flex flex-col flex-1 text-left">
-                            <h3 class="text-2xl font-bold text-[#44403c] mb-1 font-kanit leading-tight"><?php echo esc_html($item->title); ?></h3>
-                            <p class="text-gray-500 mb-6 text-sm line-clamp-2 leading-relaxed"><?php echo esc_html($item->subtitle); ?></p>
+                            <h3 class="text-2xl font-bold text-[#44403c] mb-1 font-kanit leading-tight"><?php echo esc_html($eb->title); ?></h3>
+                            <p class="text-gray-500 mb-6 text-sm line-clamp-2 leading-relaxed"><?php echo esc_html($eb->subtitle); ?></p>
                             <div class="mt-auto">
-                                <?php if ($item->price_label): ?>
-                                    <div class="flex justify-between items-end mb-4">
-                                        <span class="font-kanit font-bold text-xl text-[#44403c]"><?php echo esc_html($item->price_label); ?></span>
-                                    </div>
-                                <?php endif; ?>
-                                <?php if ($item->sales_url): ?>
-                                    <a href="<?php echo esc_url($item->sales_url); ?>"
-                                        class="block w-full py-3 rounded-full border-2 border-[#00AB8E] text-[#00AB8E] font-bold font-kanit text-center hover:bg-[#00AB8E] hover:text-white transition tracking-wide">
-                                        <?php echo $current_lang === 'th' ? 'ดูรายละเอียดคอร์ส' : 'View course'; ?>
-                                    </a>
-                                <?php endif; ?>
+                                <a href="<?php echo esc_url($eb->download); ?>"
+                                    class="block w-full py-3 rounded-full bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white font-bold font-kanit text-center hover:opacity-95 transition shadow-lg tracking-wide">
+                                    ⬇ <?php echo $current_lang === 'th' ? 'อ่าน / ดาวน์โหลด' : 'Read / Download'; ?>
+                                </a>
+                                <p class="text-center text-[11px] text-gray-400 mt-2">
+                                    <?php echo $current_lang === 'th' ? 'ไฟล์ PDF ระบุชื่อของเรา · ดาวน์โหลดซ้ำได้เสมอ' : 'Personalized PDF · re-download anytime'; ?>
+                                </p>
                             </div>
                         </div>
                     </div>
                 <?php endforeach; ?>
             </div>
+            <?php endif; ?>
 
-            <!-- ================= E-BOOK SECTION ================= -->
-            <?php if ($has_ebook_section): ?>
-                <div class="flex items-baseline gap-3 mb-6">
-                    <h3 class="font-kanit font-bold text-xl text-[#44403c]">E-Book</h3>
-                    <span class="font-kanit text-xs text-gray-400"><?php echo $current_lang === 'th' ? 'คู่มือประจำ archetype จากผล MindMap' : 'Archetype guides from your MindMap result'; ?></span>
-                    <div class="flex-1 h-px bg-gray-200"></div>
+            <!-- ================= STORE: everything not owned ================= -->
+            <?php if ($has_catalog): ?>
+                <div class="text-center mb-10 <?php echo !empty($library) ? 'pt-4 border-t border-gray-200' : ''; ?>">
+                    <h3 class="font-kanit font-bold text-2xl text-[#44403c] <?php echo !empty($library) ? 'mt-10' : ''; ?>">
+                        <?php echo $current_lang === 'th' ? 'คอร์สและ E-Book จาก Dogology' : 'Courses & E-Books from Dogology'; ?>
+                    </h3>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    <?php foreach ($my_ebooks as $eb): ?>
-                        <!-- Owned ebook: portrait cover, no progress, download button -->
-                        <div class="bg-white rounded-xl overflow-hidden ring-2 ring-inset ring-[#00AB8E] shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1)] transform hover:scale-[1.02] transition duration-300 flex flex-col h-full group p-0">
-                            <div class="relative bg-gray-50 flex items-center justify-center py-6">
-                                <img src="<?php echo esc_url($eb->thumbnail); ?>" class="h-64 w-auto rounded shadow-lg" alt="">
-                                <span class="absolute top-4 left-4 bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md tracking-wider">E-BOOK</span>
-                            </div>
-                            <div class="p-6 flex flex-col flex-1 text-left">
-                                <h3 class="text-2xl font-bold text-[#44403c] mb-1 font-kanit leading-tight"><?php echo esc_html($eb->title); ?></h3>
-                                <p class="text-gray-500 mb-6 text-sm line-clamp-2 leading-relaxed"><?php echo esc_html($eb->subtitle); ?></p>
-                                <div class="mt-auto">
-                                    <a href="<?php echo esc_url($eb->download); ?>"
-                                        class="block w-full py-3 rounded-full bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white font-bold font-kanit text-center hover:opacity-95 transition shadow-lg tracking-wide">
-                                        ⬇ <?php echo $current_lang === 'th' ? 'อ่าน / ดาวน์โหลด' : 'Read / Download'; ?>
-                                    </a>
-                                    <p class="text-center text-[11px] text-gray-400 mt-2">
-                                        <?php echo $current_lang === 'th' ? 'ไฟล์ PDF ระบุชื่อของเรา · ดาวน์โหลดซ้ำได้เสมอ' : 'Personalized PDF · re-download anytime'; ?>
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-
-                    <?php foreach ($catalog_locked_ebooks as $item): ?>
-                        <!-- Locked ebook card -->
-                        <div class="bg-white rounded-xl overflow-hidden ring-1 ring-inset ring-gray-200 shadow-sm flex flex-col h-full group p-0">
-                            <div class="relative bg-gray-50 flex items-center justify-center py-6">
-                                <img src="<?php echo esc_url($item->thumbnail); ?>" class="h-64 w-auto rounded shadow opacity-85" alt="">
-                                <span class="absolute top-4 left-4 bg-gray-700/80 text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md">🔒 E-BOOK</span>
-                            </div>
-                            <div class="p-6 flex flex-col flex-1 text-left">
-                                <h3 class="text-2xl font-bold text-[#44403c] mb-1 font-kanit leading-tight"><?php echo esc_html($item->title); ?></h3>
-                                <p class="text-gray-500 mb-6 text-sm line-clamp-2 leading-relaxed"><?php echo esc_html($item->subtitle); ?></p>
-                                <div class="mt-auto">
-                                    <?php if ($item->price_label): ?>
-                                        <div class="flex justify-between items-end mb-4">
-                                            <span class="font-kanit font-bold text-xl text-[#44403c]"><?php echo esc_html($item->price_label); ?></span>
-                                            <span class="text-xs text-gray-400">PDF</span>
+                <?php if (!empty($catalog_locked_courses)): ?>
+                    <div class="flex items-baseline gap-3 mb-6">
+                        <h4 class="font-kanit font-bold text-lg text-[#44403c]"><?php echo $current_lang === 'th' ? 'คอร์สเรียน' : 'Courses'; ?></h4>
+                        <div class="flex-1 h-px bg-gray-200"></div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-14">
+                        <?php foreach ($catalog_locked_courses as $item): ?>
+                            <div class="bg-white rounded-xl overflow-hidden ring-1 ring-inset ring-gray-200 shadow-sm flex flex-col h-full group p-0 <?php echo $item->soon ? 'opacity-70' : ''; ?>">
+                                <div class="relative h-48 bg-gray-100 overflow-hidden w-full">
+                                    <?php if ($item->thumbnail): ?>
+                                        <img src="<?php echo esc_url($item->thumbnail); ?>" class="w-full h-full object-cover block opacity-90">
+                                    <?php else: ?>
+                                        <div class="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
+                                            <span class="font-kanit text-gray-400"><?php echo esc_html($item->title); ?></span>
                                         </div>
                                     <?php endif; ?>
-                                    <?php if ($item->sales_url): ?>
-                                        <a href="<?php echo esc_url($item->sales_url); ?>"
-                                            class="block w-full py-3 rounded-full border-2 border-[#00AB8E] text-[#00AB8E] font-bold font-kanit text-center hover:bg-[#00AB8E] hover:text-white transition tracking-wide">
-                                            <?php echo $current_lang === 'th' ? 'ดูรายละเอียด / สั่งซื้อ' : 'Details / Buy'; ?>
-                                        </a>
+                                    <?php if ($item->soon): ?>
+                                        <span class="absolute top-4 left-4 bg-gray-400/90 text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md"><?php echo $current_lang === 'th' ? 'เร็ว ๆ นี้' : 'Coming soon'; ?></span>
+                                    <?php else: ?>
+                                        <span class="absolute top-4 left-4 bg-gray-700/80 text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md">🔒 <?php echo $current_lang === 'th' ? 'ยังไม่ได้ลงทะเบียน' : 'Not enrolled'; ?></span>
                                     <?php endif; ?>
                                 </div>
+                                <div class="p-6 flex flex-col flex-1 text-left">
+                                    <h3 class="text-2xl font-bold <?php echo $item->soon ? 'text-gray-400' : 'text-[#44403c]'; ?> mb-1 font-kanit leading-tight"><?php echo esc_html($item->title); ?></h3>
+                                    <p class="<?php echo $item->soon ? 'text-gray-400' : 'text-gray-500'; ?> mb-6 text-sm line-clamp-2 leading-relaxed"><?php echo esc_html($item->subtitle); ?></p>
+                                    <div class="mt-auto">
+                                        <?php if ($item->soon): ?>
+                                            <span class="font-kanit text-sm text-gray-400"><?php echo $current_lang === 'th' ? 'กำลังเตรียม...' : 'In preparation...'; ?></span>
+                                        <?php else: ?>
+                                            <?php if ($item->price_label): ?>
+                                                <div class="flex justify-between items-end mb-4">
+                                                    <span class="font-kanit font-bold text-xl text-[#44403c]"><?php echo esc_html($item->price_label); ?></span>
+                                                </div>
+                                            <?php endif; ?>
+                                            <?php if ($item->sales_url): ?>
+                                                <a href="<?php echo esc_url($item->sales_url); ?>"
+                                                    class="block w-full py-3 rounded-full border-2 border-[#00AB8E] text-[#00AB8E] font-bold font-kanit text-center hover:bg-[#00AB8E] hover:text-white transition tracking-wide">
+                                                    <?php echo $current_lang === 'th' ? 'ดูรายละเอียดคอร์ส' : 'View course'; ?>
+                                                </a>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!empty($catalog_locked_ebooks)): ?>
+                    <div class="flex items-baseline gap-3 mb-6">
+                        <h4 class="font-kanit font-bold text-lg text-[#44403c]">E-Book</h4>
+                        <span class="font-kanit text-xs text-gray-400"><?php echo $current_lang === 'th' ? 'คู่มือประจำ archetype จากผล MindMap' : 'Archetype guides from your MindMap result'; ?></span>
+                        <div class="flex-1 h-px bg-gray-200"></div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        <?php foreach ($catalog_locked_ebooks as $item): ?>
+                            <?php $recommended = !$item->soon && $mm_current && $item->archetype && $item->archetype === $mm_current['arch']; ?>
+                            <div class="bg-white rounded-xl overflow-hidden shadow-sm flex flex-col h-full group p-0 <?php echo $item->soon ? 'opacity-70 ring-1 ring-inset ring-gray-200' : ($recommended ? 'ring-2 ring-inset ring-[#00AB8E]' : 'ring-1 ring-inset ring-gray-200'); ?>">
+                                <div class="relative bg-gray-50 flex items-center justify-center py-6">
+                                    <?php if ($item->thumbnail): ?>
+                                        <img src="<?php echo esc_url($item->thumbnail); ?>" class="h-64 w-auto rounded shadow opacity-85" alt="">
+                                    <?php else: ?>
+                                        <div class="h-64 w-44 rounded bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
+                                            <span class="font-kanit text-gray-400 text-sm text-center px-2"><?php echo esc_html($item->title); ?></span>
+                                        </div>
+                                    <?php endif; ?>
+                                    <?php if ($item->soon): ?>
+                                        <span class="absolute top-4 left-4 bg-gray-400/90 text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md"><?php echo $current_lang === 'th' ? 'เร็ว ๆ นี้' : 'Coming soon'; ?></span>
+                                    <?php elseif ($recommended): ?>
+                                        <span class="absolute top-4 left-4 bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md">
+                                            ★ <?php echo $current_lang === 'th' ? 'แนะนำสำหรับ' . $mm_current['th'] : 'For your ' . $mm_current['en']; ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="absolute top-4 left-4 bg-gray-700/80 text-white text-xs font-bold px-3 py-1 rounded-full font-kanit shadow-md">🔒 E-BOOK</span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="p-6 flex flex-col flex-1 text-left">
+                                    <h3 class="text-2xl font-bold <?php echo $item->soon ? 'text-gray-400' : 'text-[#44403c]'; ?> mb-1 font-kanit leading-tight"><?php echo esc_html($item->title); ?></h3>
+                                    <p class="<?php echo $item->soon ? 'text-gray-400' : 'text-gray-500'; ?> mb-6 text-sm line-clamp-2 leading-relaxed"><?php echo esc_html($item->subtitle); ?></p>
+                                    <div class="mt-auto">
+                                        <?php if ($item->soon): ?>
+                                            <span class="font-kanit text-sm text-gray-400"><?php echo $current_lang === 'th' ? 'กำลังเขียน...' : 'Being written...'; ?></span>
+                                        <?php else: ?>
+                                            <?php if ($item->price_label): ?>
+                                                <div class="flex justify-between items-end mb-4">
+                                                    <span class="font-kanit font-bold text-xl text-[#44403c]"><?php echo esc_html($item->price_label); ?></span>
+                                                    <span class="text-xs text-gray-400">PDF</span>
+                                                </div>
+                                            <?php endif; ?>
+                                            <?php if ($item->sales_url): ?>
+                                                <a href="<?php echo esc_url($item->sales_url); ?>"
+                                                    class="block w-full py-3 rounded-full <?php echo $recommended ? 'bg-gradient-to-r from-[#00AB8E] to-[#0076BA] text-white shadow-lg hover:opacity-95' : 'border-2 border-[#00AB8E] text-[#00AB8E] hover:bg-[#00AB8E] hover:text-white'; ?> font-bold font-kanit text-center transition tracking-wide">
+                                                    <?php echo $current_lang === 'th' ? 'ดูรายละเอียด / สั่งซื้อ' : 'Details / Buy'; ?>
+                                                </a>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             <?php endif; ?>
         <?php endif; ?>
 
