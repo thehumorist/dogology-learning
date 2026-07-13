@@ -327,9 +327,12 @@
 .dl-mm--empty .dl-mm-info p { font-size: 0.88rem; color: var(--dl-muted); margin-top: 2px; }
 
 @media (max-width: 768px) {
+    /* stacked layout centers everything: radar, eyebrow row, title, date, buttons */
     .dl-mm-flex { flex-direction: column; }
     .dl-mm-radar { border-right: none; border-bottom: 1px solid var(--dl-line); flex-basis: auto; }
-    .dl-mm-main { flex-direction: column; align-items: flex-start; }
+    .dl-mm-main { flex-direction: column; align-items: center; }
+    .dl-mm-info { text-align: center; width: 100%; }
+    .dl-mm-eyebrow-row { justify-content: center; }
     .dl-mm .dl-btn { width: 100%; }
     .dl-mm--empty { flex-direction: column; text-align: center; }
     .dl-mm--empty .dl-btn { width: 100%; }
