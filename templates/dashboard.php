@@ -1029,7 +1029,7 @@ if ($current_lang === 'en') {
                                     ⬇ <?php echo $current_lang === 'th' ? 'อ่าน / ดาวน์โหลด' : 'Read / Download'; ?>
                                 </a>
                                 <p class="dl-card-hint">
-                                    <?php echo $current_lang === 'th' ? 'ไฟล์ PDF ระบุชื่อของเรา · ดาวน์โหลดซ้ำได้เสมอ' : 'Personalized PDF · re-download anytime'; ?>
+                                    <?php echo $current_lang === 'th' ? 'ไฟล์ PDF ระบุชื่อ · ดาวน์โหลดซ้ำได้เสมอ' : 'Personalized PDF · re-download anytime'; ?>
                                 </p>
                             </div>
                         </div>
