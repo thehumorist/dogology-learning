@@ -830,7 +830,7 @@ if ($current_lang === 'en') {
                                     <?php endif; ?>
                                 </div>
                                 <h2 class="dl-mm-title" id="mm-entry-title">
-                                    <?php echo $mm_current['dog'] ? esc_html(($current_lang === 'th' ? 'น้อง' : '') . $mm_current['dog']) . ' ' . ($current_lang === 'th' ? 'คือ' : 'is') . ' ' : ''; ?>
+                                    <?php echo $mm_current['dog'] ? esc_html(($current_lang === 'th' ? 'น้อง' : '') . $mm_current['dog']) . ' · ' : ''; ?>
                                     <?php echo esc_html($mm_current['th']); ?>
                                     <small>(<?php echo esc_html($mm_current['en']); ?>)</small>
                                 </h2>
@@ -870,7 +870,7 @@ if ($current_lang === 'en') {
                                 }
                                 // dog_name is user-entered — build the title with
                                 // textContent, never innerHTML, so markup can't execute.
-                                var lead = e.dog ? ((isTh ? 'น้อง' : '') + e.dog + (isTh ? ' คือ ' : ' is ')) : '';
+                                var lead = e.dog ? ((isTh ? 'น้อง' : '') + e.dog + ' · ') : '';
                                 var titleEl = document.getElementById('mm-entry-title');
                                 titleEl.textContent = lead + e.th + ' ';
                                 var small = document.createElement('small');
