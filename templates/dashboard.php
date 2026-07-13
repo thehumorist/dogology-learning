@@ -839,14 +839,14 @@ if ($current_lang === 'en') {
                                     <?php echo esc_html($mm_current['date']); ?>
                                 </p>
                             </div>
-                            <div style="display:flex;flex-direction:column;gap:10px;flex:0 0 auto;">
+                            <div class="dl-mm-actions">
                                 <a href="<?php echo esc_url($mm_current['report']); ?>" id="mm-entry-report"
                                     class="dl-btn dl-btn--primary">
                                     <?php echo $current_lang === 'th' ? 'ดูผลวิเคราะห์ฉบับเต็ม' : 'View full report'; ?>
                                 </a>
                                 <?php if ($mm_retake_url): ?>
                                     <a href="<?php echo esc_url($mm_retake_url); ?>"
-                                        class="dl-btn dl-btn--ghost" style="padding:9px 20px;font-size:0.82rem;">
+                                        class="dl-btn dl-btn--ghost">
                                         <?php echo $current_lang === 'th' ? 'ทำแบบประเมินอีกครั้ง' : 'Retake assessment'; ?>
                                     </a>
                                 <?php endif; ?>
