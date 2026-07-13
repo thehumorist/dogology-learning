@@ -125,6 +125,33 @@ class Dogology_Ebook
         return '';
     }
 
+    /**
+     * Signed, login-free download URL for a paid ebook order. Lets the buyer
+     * (or the LINE flex / email) download the stamped PDF from a fresh browser
+     * with no LMS session — the HMAC proves the order↔course pairing, and the
+     * download handler independently re-checks the order is paid before serving
+     * (so the link is inert until payment is verified, and safe if shared). No
+     * expiry: buyers re-download anytime ("ดาวน์โหลดซ้ำได้เสมอ"). HMAC over
+     * "order|course" with wp_salt('auth') — same install as the verifier.
+     */
+    public static function signed_download_url($order_id, $course_id)
+    {
+        $order_id  = (int) $order_id;
+        $course_id = (int) $course_id;
+        $sig = hash_hmac('sha256', $order_id . '|' . $course_id, wp_salt('auth'));
+        return home_url('/learn/ebook-dl/' . $order_id . '/' . $course_id . '/?sig=' . $sig);
+    }
+
+    /** Verify a signed_download_url signature (constant-time). */
+    public static function verify_download_sig($order_id, $course_id, $sig)
+    {
+        if (!$sig) {
+            return false;
+        }
+        $expected = hash_hmac('sha256', ((int) $order_id) . '|' . ((int) $course_id), wp_salt('auth'));
+        return hash_equals($expected, (string) $sig);
+    }
+
     /** Absolute path of a course's source PDF, or '' when unset/missing. */
     public static function source_path($course_id)
     {

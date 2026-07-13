@@ -24,11 +24,11 @@ class Dogology_Learning_Router
         add_action('wp_ajax_dl_video_diag', array($this, 'handle_video_diag'));
         add_action('wp_ajax_nopriv_dl_video_diag', array($this, 'handle_video_diag'));
 
-        // Auto-flush on first load if needed (v5: /learn/download/{id} ebook route)
+        // Auto-flush on first load if needed (v6: /learn/ebook-dl/{order}/{course} signed route)
         add_action('init', function () {
-            if (!get_option('dogology_learning_permalinks_flushed_v5')) {
+            if (!get_option('dogology_learning_permalinks_flushed_v6')) {
                 flush_rewrite_rules();
-                update_option('dogology_learning_permalinks_flushed_v5', 1);
+                update_option('dogology_learning_permalinks_flushed_v6', 1);
             }
         }, 99);
     }
@@ -48,6 +48,11 @@ class Dogology_Learning_Router
         // MUST be registered before the numeric player rules or ^learn/([0-9]+) shadows it.
         add_rewrite_rule('^learn/download/([0-9]+)/?$', 'index.php?dl_route=download&course_id=$matches[1]', 'top');
 
+        // 3-pre2. Signed, login-free ebook download: /learn/ebook-dl/{order_id}/{course_id}?sig=
+        // For post-purchase delivery (success page, LINE flex, email) where the
+        // buyer has no LMS session. Auth is the HMAC + a paid-order re-check.
+        add_rewrite_rule('^learn/ebook-dl/([0-9]+)/([0-9]+)/?$', 'index.php?dl_route=ebook_dl&order_id=$matches[1]&course_id=$matches[2]', 'top');
+
         // 3a. Player Root (Smart Redirect): /learn/{course_slug}
         add_rewrite_rule('^learn/([0-9]+)/?$', 'index.php?dl_route=player&course_id=$matches[1]', 'top');
 
@@ -66,6 +71,7 @@ class Dogology_Learning_Router
         $vars[] = 'dl_route';
         $vars[] = 'course_id';
         $vars[] = 'lesson_id';
+        $vars[] = 'order_id';
         return $vars;
     }
 
@@ -132,6 +138,55 @@ class Dogology_Learning_Router
         if (!headers_sent()) {
             header('X-Frame-Options: DENY');
             header("Content-Security-Policy: frame-ancestors 'none'");
+        }
+
+        // Signed, login-free ebook download — post-purchase delivery from the
+        // success page / LINE flex / email. Auth is the HMAC over order|course
+        // plus an independent paid-order re-check, so the link is inert until
+        // payment is verified (the manual-review case) and safe if forwarded.
+        if ($route === 'ebook_dl') {
+            global $wpdb;
+            $order_id  = (int) get_query_var('order_id');
+            $course_id = (int) get_query_var('course_id');
+            $sig       = isset($_GET['sig']) ? sanitize_text_field(wp_unslash($_GET['sig'])) : '';
+
+            if (!Dogology_Ebook::verify_download_sig($order_id, $course_id, $sig)) {
+                wp_die(esc_html__('ลิงก์ดาวน์โหลดไม่ถูกต้อง กรุณาเปิดจากข้อความ LINE หรืออีเมลล่าสุด', 'dogology-learning'), 'Dogology', array('response' => 403));
+            }
+
+            $course = get_post($course_id);
+            if (!$course || $course->post_type !== 'dogology_course' || $course->post_status !== 'publish'
+                || !Dogology_Ebook::is_ebook($course_id)) {
+                wp_die(esc_html__('ไม่พบ E-Book นี้', 'dogology-learning'), 'Dogology', array('response' => 404));
+            }
+
+            // Re-check the order is genuinely paid and bound to this course.
+            $orders_t  = $wpdb->prefix . 'dogology_orders';
+            $cohorts_t = $wpdb->prefix . 'dogology_cohorts';
+            $row = $wpdb->get_row($wpdb->prepare(
+                "SELECT o.status, o.customer_name, o.customer_email, c.linked_course_id
+                 FROM $orders_t o LEFT JOIN $cohorts_t c ON o.cohort_id = c.id
+                 WHERE o.id = %d",
+                $order_id
+            ));
+            if (!$row || !in_array($row->status, array('paid', 'deposit_paid'), true)) {
+                // Not yet verified (manual-review path). Explain, don't error out.
+                wp_die(
+                    esc_html__('เรากำลังตรวจสอบการชำระเงินของคุณ เมื่อยืนยันแล้วเราจะส่งลิงก์ดาวน์โหลดให้ทาง LINE และอีเมลทันทีครับ', 'dogology-learning'),
+                    'Dogology', array('response' => 402)
+                );
+            }
+            if ((int) $row->linked_course_id !== $course_id) {
+                wp_die(esc_html__('ไม่พบ E-Book นี้', 'dogology-learning'), 'Dogology', array('response' => 404));
+            }
+
+            // Duck-typed student for the stamper (name → stamp, id → cache key).
+            $buyer = (object) array(
+                'id'           => 'ord' . $order_id,
+                'display_name' => $row->customer_name,
+                'email'        => $row->customer_email,
+            );
+            Dogology_Ebook::stream_for($course_id, $buyer); // exits
         }
 
         // Ebook download — streams bytes and exits, never returns a template.
