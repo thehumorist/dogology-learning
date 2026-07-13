@@ -858,7 +858,9 @@ if ($current_lang === 'en') {
                     <script src="<?php echo esc_url($mm_radar_js); ?>"></script>
                     <script>
                         (function () {
-                            var entries = <?php echo wp_json_encode($mm_entries); ?>;
+                            // JSON_HEX_TAG & co. stop a dog_name containing a closing
+                            // script tag from breaking out of this inline script element.
+                            var entries = <?php echo wp_json_encode($mm_entries, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
                             var isTh = <?php echo $current_lang === 'th' ? 'true' : 'false'; ?>;
                             function show(i) {
                                 var e = entries[i];
@@ -866,9 +868,14 @@ if ($current_lang === 'en') {
                                 if (window.DogologyRadar && e.scores) {
                                     DogologyRadar.render(document.getElementById('mm-mini-radar'), e.scores, { size: 150 });
                                 }
+                                // dog_name is user-entered — build the title with
+                                // textContent, never innerHTML, so markup can't execute.
                                 var lead = e.dog ? ((isTh ? 'น้อง' : '') + e.dog + (isTh ? ' คือ ' : ' is ')) : '';
-                                document.getElementById('mm-entry-title').innerHTML =
-                                    lead + e.th + ' <small>(' + e.en + ')</small>';
+                                var titleEl = document.getElementById('mm-entry-title');
+                                titleEl.textContent = lead + e.th + ' ';
+                                var small = document.createElement('small');
+                                small.textContent = '(' + e.en + ')';
+                                titleEl.appendChild(small);
                                 document.getElementById('mm-entry-date').textContent =
                                     (isTh ? 'ประเมินเมื่อ ' : 'Assessed ') + e.date;
                                 document.getElementById('mm-entry-report').setAttribute('href', e.report);
