@@ -933,7 +933,13 @@ if ($current_lang === 'en') {
             <!-- ACCOUNT RECOVERY STRIP: owns nothing — purchases may live under
                  another account (bought by email, logged in via LINE). Links to
                  the self-merge flow on /student-login?step=recover. -->
-            <div style="background:#f0fdf9; border:1px solid #ccfbef; border-radius:16px; padding:16px 20px; margin-bottom:24px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px;">
+            <style>
+                .dl-recover-strip { background:#f0fdf9; border:1px solid #ccfbef; border-radius:16px; padding:16px 20px; margin-bottom:24px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; }
+                @media (max-width: 640px) {
+                    .dl-recover-strip { flex-direction:column; justify-content:center; text-align:center; }
+                }
+            </style>
+            <div class="dl-recover-strip">
                 <span style="color:#0f766e; font-size:14px; font-weight:600;">
                     <?php echo $current_lang === 'th' ? '🔍 ซื้อคอร์สไว้แต่ยังไม่เห็นใช่ไหม? คอร์สอาจอยู่ภายใต้อีเมลที่ใช้ตอนซื้อ' : '🔍 Purchased a course but can\'t see it? It may be under the email you used at checkout.'; ?>
                 </span>
