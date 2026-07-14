@@ -290,7 +290,7 @@ class Dogology_Auth
     /**
      * Send OTP
      */
-    public static function send_otp($email, $user_id = 0, $lang = 'en')
+    public static function send_otp($email, $user_id = 0, $lang = 'en', $include_link = true)
     {
         if (!self::otp_send_allowed($email)) {
             return false;
@@ -299,16 +299,19 @@ class Dogology_Auth
         // Generate 6 digit code
         $otp = random_int(100000, 999999);
 
-        // Store in transient (5 mins)
-        set_transient('dogology_otp_' . md5($email), $otp, 300);
+        // Store in transient (10 mins — 5 was too tight for slow SMTP hops)
+        set_transient('dogology_otp_' . md5($email), $otp, 600);
 
         // Generate Magic Link
-        $expiry = time() + 300; // 5 mins
+        $expiry = time() + 600; // 10 mins
         // Include user_id in signature for robust identification
         $signature = hash_hmac('sha256', $email . '|' . $otp . '|' . $expiry . '|' . $user_id, DOGOLOGY_AUTH_SALT);
         $magic_link = add_query_arg(array(
             'action' => 'magic_login',
-            'email' => $email, // add_query_arg handles encoding
+            // add_query_arg does NOT urlencode values (build_query with
+            // urlencode=false) — a literal '+' in plus-addressed emails decoded
+            // back as a space and broke the HMAC. Encode explicitly.
+            'email' => rawurlencode($email),
             'otp' => $otp,
             'ts' => $expiry,
             'uid' => $user_id,
@@ -321,7 +324,11 @@ class Dogology_Auth
         $txt_heading = 'Dogology Experience';
         $txt_code = $is_th ? 'นี่คือรหัสเข้าสู่ระบบของคุณ:' : 'Here is your login code:';
         $txt_btn = $is_th ? 'เข้าสู่ระบบทันที &rarr;' : 'Login Instantly &rarr;';
-        $txt_expire = $is_th ? 'รหัสและลิงก์นี้จะหมดอายุภายใน 5 นาที' : 'This code and link expire in 5 minutes.';
+        if ($include_link) {
+            $txt_expire = $is_th ? 'รหัสและลิงก์นี้จะหมดอายุภายใน 10 นาที' : 'This code and link expire in 10 minutes.';
+        } else {
+            $txt_expire = $is_th ? 'รหัสนี้จะหมดอายุภายใน 10 นาที' : 'This code expires in 10 minutes.';
+        }
         $txt_footer = '&copy; ' . date('Y') . ' Dogology.';
         $btn_url = esc_url($magic_link);
 
@@ -362,7 +369,7 @@ class Dogology_Auth
                                 </tr>
                             </table>
 
-                            <!-- CTA Button -->
+                            ' . ($include_link ? '<!-- CTA Button -->
                             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                                 <tr>
                                     <td align="center" style="padding:0 0 28px 0;">
@@ -377,7 +384,7 @@ class Dogology_Auth
                                         <!--<![endif]-->
                                     </td>
                                 </tr>
-                            </table>
+                            </table>' : '') . '
 
                             <!-- Expiry Note -->
                             <p style="color:#94a3b8; font-size:13px; line-height:1.5; margin:0;">' . esc_html($txt_expire) . '</p>

@@ -71,6 +71,7 @@ $_err = [
     'recover_not_found' => $_auth_lang === 'th' ? 'ยืนยันอีเมลสำเร็จ แต่ไม่พบคอร์สภายใต้อีเมลนี้ ลองอีเมลอื่นที่อาจใช้ตอนซื้อดูได้เลย' : 'Email verified, but no purchases were found under this email. Try another email you may have used at checkout.',
     'merge_expired'   => $_auth_lang === 'th' ? 'คำขอรวมบัญชีหมดอายุ กรุณาเริ่มใหม่อีกครั้ง' : 'The merge request expired. Please start again.',
     'merge_failed'    => $_auth_lang === 'th' ? 'รวมบัญชีไม่สำเร็จ กรุณาติดต่อทีมงาน Dogology' : 'Account merge failed. Please contact Dogology support.',
+    'merge_use_code'  => $_auth_lang === 'th' ? 'เพื่อความปลอดภัย กรุณากรอกรหัส 6 หลักจากอีเมล ในหน้าที่ขอรหัสไว้' : 'For security, please enter the 6-digit code from the email on the page where you requested it.',
 ];
 
 // --- FORM HANDLERS ---
@@ -103,7 +104,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $_dl_sent = true;
             if ($_dl_known) {
-                $_dl_sent = Dogology_Auth::send_otp($email, $current_student ? $current_student->id : 0, $_auth_lang);
+                // Recover-context emails carry the code only (no magic link):
+                // the link is useless cross-browser there and scanners can't
+                // trigger anything without one.
+                $_dl_include_link = !(isset($_POST['context']) && $_POST['context'] === 'recover');
+                $_dl_sent = Dogology_Auth::send_otp($email, $current_student ? $current_student->id : 0, $_auth_lang, $_dl_include_link);
             }
 
             if ($_dl_sent === false) {
@@ -387,37 +392,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// If already logged in (AND NOT just logged out) (AND NOT passkey bridge)
-if (!$just_logged_out && !$trigger_passkey_js && ($current_student = Dogology_Auth::get_current_student())) {
-
-    // SOFT GATE: Allow all logged-in users to access dashboard.
-    // Email verification warning will be shown via a banner on dashboard.php.
-
-    $is_onboarding = isset($_GET['step']) && in_array($_GET['step'], array('onboarding', 'otp', 'recover', 'merge'), true);
-
-    // If not explicitly on onboarding page, redirect to dashboard
-    if (!$is_onboarding) {
-        wp_redirect(home_url('/my-courses'));
-        exit;
-    }
-
-    // Special Case: LIFF Browser + Passkey Setup
-    // LIFF cannot do WebAuthn, so skip passkey-related steps (but allow email verify).
-    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
-    $is_liff = (stripos($ua, 'Line') !== false || stripos($ua, 'LIFF') !== false);
-    $onboarding_step = isset($_GET['onboard_step']) ? $_GET['onboard_step'] : '';
-
-
-    // Note: Email verification continues normally in LIFF
+// 5a. Magic Login (GET) — scanner-proof interstitial.
+// Email scanners (Outlook SafeLinks, corporate AV) prefetch GET links and were
+// consuming the one-time OTP before the human ever clicked. The GET therefore
+// has ZERO side effects: it renders a tiny auto-submitting page, and the real
+// verification + login happen only on the POSTed confirmation (5b). Scanners
+// don't execute JS or POST. Placed BEFORE the logged-in redirect so a
+// logged-in initiator's click also flows through (needed for the merge offer).
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'magic_login') {
+    $_ml_fields = array('email', 'otp', 'ts', 'uid', 'sig');
+    $_ml_title = $_auth_lang === 'th' ? 'กำลังเข้าสู่ระบบ...' : 'Signing you in...';
+    $_ml_btn = $_auth_lang === 'th' ? 'กดเพื่อเข้าสู่ระบบ' : 'Click to sign in';
+    ?>
+    <!DOCTYPE html>
+    <html <?php language_attributes(); ?>>
+    <head>
+        <meta charset="<?php bloginfo('charset'); ?>">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="robots" content="noindex">
+        <title><?php echo esc_html($_ml_title); ?></title>
+        <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;700&display=swap" rel="stylesheet">
+    </head>
+    <body style="margin:0; background:#f8fafc; font-family:'Kanit',sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh;">
+        <div style="background:#fff; border:1px solid #f0f0f1; border-radius:16px; padding:40px; max-width:400px; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,0.08);">
+            <div style="border:4px solid #f3f3f3; border-top:4px solid #00AB8E; border-radius:50%; width:30px; height:30px; animation:mlspin 1s linear infinite; margin:0 auto 16px;"></div>
+            <p style="color:#666; margin:0 0 20px;"><?php echo esc_html($_ml_title); ?></p>
+            <form id="ml-confirm" method="post" action="<?php echo esc_url(home_url('/student-login/')); ?>">
+                <input type="hidden" name="action" value="magic_login_confirm">
+                <?php foreach ($_ml_fields as $_f): ?>
+                    <input type="hidden" name="<?php echo esc_attr($_f); ?>" value="<?php echo esc_attr(isset($_GET[$_f]) ? wp_unslash($_GET[$_f]) : ''); ?>">
+                <?php endforeach; ?>
+                <button type="submit" style="background:#00AB8E; color:#fff; border:none; border-radius:12px; padding:14px 32px; font-weight:700; font-size:16px; cursor:pointer; font-family:inherit;"><?php echo esc_html($_ml_btn); ?></button>
+            </form>
+        </div>
+        <style>@keyframes mlspin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
+        <script>document.getElementById('ml-confirm').submit();</script>
+    </body>
+    </html>
+    <?php
+    exit;
 }
 
-// 5. Magic Login Handler (GET request)
-if (isset($_GET['action']) && $_GET['action'] === 'magic_login') {
-    $email = isset($_GET['email']) ? $_GET['email'] : ''; // No extra urldecode needed
-    $otp = isset($_GET['otp']) ? $_GET['otp'] : '';
-    $ts = isset($_GET['ts']) ? intval($_GET['ts']) : 0;
-    $uid = isset($_GET['uid']) ? intval($_GET['uid']) : 0;
-    $sig = isset($_GET['sig']) ? $_GET['sig'] : '';
+// 5b. Magic Login Confirmation (POST, from the interstitial above)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'magic_login_confirm') {
+    $email = isset($_POST['email']) ? wp_unslash($_POST['email']) : '';
+    $otp = isset($_POST['otp']) ? wp_unslash($_POST['otp']) : '';
+    $ts = isset($_POST['ts']) ? intval($_POST['ts']) : 0;
+    $uid = isset($_POST['uid']) ? intval($_POST['uid']) : 0;
+    $sig = isset($_POST['sig']) ? wp_unslash($_POST['sig']) : '';
 
     // Verify Signature (Robust check including UID)
     $check_sig_v2 = hash_hmac('sha256', $email . '|' . $otp . '|' . $ts . '|' . $uid, DOGOLOGY_AUTH_SALT);
@@ -469,7 +491,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'magic_login') {
                         wp_redirect(add_query_arg(array('step' => 'merge', 't' => time()), home_url('/student-login')));
                         exit;
                     }
-                    $error = $_err['email_taken'];
+                    // Different browser than the one that requested the code (e.g.
+                    // requested inside the LINE app, link opened in Safari). Tell
+                    // the user to type the code where they asked for it.
+                    $error = $_err['merge_use_code'];
                 } else {
                     // Update User
                     $db->update_student($student_to_verify->id, array(
@@ -506,6 +531,30 @@ if (isset($_GET['action']) && $_GET['action'] === 'magic_login') {
     } else {
         $error = $_auth_lang === 'th' ? 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' : 'Invalid or expired link.';
     }
+}
+
+// If already logged in (AND NOT just logged out) (AND NOT passkey bridge)
+if (!$just_logged_out && !$trigger_passkey_js && ($current_student = Dogology_Auth::get_current_student())) {
+
+    // SOFT GATE: Allow all logged-in users to access dashboard.
+    // Email verification warning will be shown via a banner on dashboard.php.
+
+    $is_onboarding = isset($_GET['step']) && in_array($_GET['step'], array('onboarding', 'otp', 'recover', 'merge'), true);
+
+    // If not explicitly on onboarding page, redirect to dashboard
+    if (!$is_onboarding) {
+        wp_redirect(home_url('/my-courses'));
+        exit;
+    }
+
+    // Special Case: LIFF Browser + Passkey Setup
+    // LIFF cannot do WebAuthn, so skip passkey-related steps (but allow email verify).
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    $is_liff = (stripos($ua, 'Line') !== false || stripos($ua, 'LIFF') !== false);
+    $onboarding_step = isset($_GET['onboard_step']) ? $_GET['onboard_step'] : '';
+
+
+    // Note: Email verification continues normally in LIFF
 }
 
 $liff_id_setting = get_option('dogology_learning_liff_id', '');
@@ -1453,6 +1502,7 @@ $_dl_show_iab_strip = in_array($_dl_auth_parsed['label'], array('Facebook in-app
                             <input type="hidden" name="action" value="send_otp">
                             <input type="hidden" name="_dl_nonce" value="<?php echo wp_create_nonce('dl_auth_action'); ?>">
                             <input type="hidden" name="is_ajax" value="1">
+                            <input type="hidden" name="context" value="recover">
                             <div class="dl-form-group">
                                 <label class="dl-label"><?php echo esc_html($at['label_email']); ?></label>
                                 <input type="email" name="email" id="recover-email-input" class="dl-input" placeholder="name@example.com" required autofocus>
