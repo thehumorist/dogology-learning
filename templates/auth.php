@@ -453,16 +453,23 @@ if (isset($_GET['action']) && $_GET['action'] === 'magic_login') {
                 // Check if email used by another account
                 $existing = $db->get_student_by_email($email);
                 if ($existing && $existing->id != $student_to_verify->id) {
-                    // MERGE OFFER (magic-link path): the click proves email
-                    // ownership. Log in as the link's account and offer to merge
-                    // it into the account that holds this email.
-                    Dogology_Auth::login_student($student_to_verify->id);
-                    set_transient('dogology_merge_' . $student_to_verify->id, array(
-                        'target_id' => (int) $existing->id,
-                        'email' => $email,
-                    ), 10 * MINUTE_IN_SECONDS);
-                    wp_redirect(add_query_arg(array('step' => 'merge', 't' => time()), home_url('/student-login')));
-                    exit;
+                    // MERGE OFFER (magic-link path) — but ONLY if this browser is
+                    // already logged in as the account named in the link, i.e. the
+                    // person who initiated the OTP clicked their own email. Without
+                    // this check, an attacker could trigger an OTP email to a victim
+                    // (uid in link = attacker), and the victim clicking it would be
+                    // logged into the attacker's account and coaxed into merging —
+                    // handing the attacker LINE access to the victim's courses.
+                    $_dl_session_student = Dogology_Auth::get_current_student();
+                    if ($_dl_session_student && (int) $_dl_session_student->id === (int) $student_to_verify->id) {
+                        set_transient('dogology_merge_' . $student_to_verify->id, array(
+                            'target_id' => (int) $existing->id,
+                            'email' => $email,
+                        ), 10 * MINUTE_IN_SECONDS);
+                        wp_redirect(add_query_arg(array('step' => 'merge', 't' => time()), home_url('/student-login')));
+                        exit;
+                    }
+                    $error = $_err['email_taken'];
                 } else {
                     // Update User
                     $db->update_student($student_to_verify->id, array(
