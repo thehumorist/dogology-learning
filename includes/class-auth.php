@@ -257,7 +257,7 @@ class Dogology_Auth
     }
 
     /**
-     * OTP send rate limit: 60s cooldown per email, 5/hour per email, 10/hour per IP.
+     * OTP send rate limit: 30s cooldown per email, 10/hour per email, 20/hour per IP.
      * Counters live in transients (Redis-backed). Returns true and burns one slot,
      * or false if any limit is hit.
      */
@@ -271,16 +271,16 @@ class Dogology_Auth
         }
 
         $email_count = (int) get_transient('dogology_otp_hr_' . $email_key);
-        if ($email_count >= 5) {
+        if ($email_count >= 10) {
             return false;
         }
 
         $ip_count = (int) get_transient('dogology_otp_iphr_' . $ip_key);
-        if ($ip_count >= 10) {
+        if ($ip_count >= 20) {
             return false;
         }
 
-        set_transient('dogology_otp_cd_' . $email_key, 1, MINUTE_IN_SECONDS);
+        set_transient('dogology_otp_cd_' . $email_key, 1, 30);
         set_transient('dogology_otp_hr_' . $email_key, $email_count + 1, HOUR_IN_SECONDS);
         set_transient('dogology_otp_iphr_' . $ip_key, $ip_count + 1, HOUR_IN_SECONDS);
 

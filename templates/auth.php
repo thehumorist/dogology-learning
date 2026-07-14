@@ -1188,7 +1188,7 @@ $_dl_show_iab_strip = in_array($_dl_auth_parsed['label'], array('Facebook in-app
                         </div>
                         <script>
                         (function(){
-                            var secs = 60, timer = document.getElementById('otp-resend-timer'), link = document.getElementById('otp-resend-link');
+                            var secs = 30, timer = document.getElementById('otp-resend-timer'), link = document.getElementById('otp-resend-link');
                             function tick(){ if(secs>0){ timer.innerText=<?php echo wp_json_encode($_auth_lang === 'th' ? 'ส่งรหัสใหม่ได้ใน ' : 'Resend in '); ?>+secs+'s'; secs--; setTimeout(tick,1000); } else { timer.style.display='none'; link.style.display='inline'; } }
                             tick();
                         })();
@@ -1289,7 +1289,7 @@ $_dl_show_iab_strip = in_array($_dl_auth_parsed['label'], array('Facebook in-app
                                 </div>
                                 <script>
                                 (function(){
-                                    var secs = 60, timer = document.getElementById('onboard-resend-timer'), link = document.getElementById('onboard-resend-link');
+                                    var secs = 30, timer = document.getElementById('onboard-resend-timer'), link = document.getElementById('onboard-resend-link');
                                     function tick(){ if(secs>0){ timer.innerText=<?php echo wp_json_encode($_auth_lang === 'th' ? 'ส่งรหัสใหม่ได้ใน ' : 'Resend in '); ?>+secs+'s'; secs--; setTimeout(tick,1000); } else { timer.style.display='none'; link.style.display='inline'; } }
                                     tick();
                                 })();
