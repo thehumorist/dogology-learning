@@ -101,6 +101,119 @@ class Dogology_Student_DB
         return $wpdb->delete($this->table_name, array('id' => $id));
     }
 
+    /**
+     * Merge $loser_id into $survivor_id (account self-merge, e.g. a LINE-created
+     * account absorbing into the email account that holds the purchases).
+     *
+     * - Enrollments/progress are unioned (max completion wins per lesson).
+     * - Identity fields (line_uid, passkey_id, profile picture, display name)
+     *   move onto the survivor where the survivor lacks them. The loser's
+     *   line_uid/passkey_id are cleared FIRST to satisfy the UNIQUE keys.
+     * - Login-event history is reassigned to the survivor.
+     * - The loser row is audit-logged (full row JSON, ring buffer of 100 in the
+     *   dogology_merge_log option) BEFORE deletion — merge is irreversible.
+     *
+     * Returns true on success, WP_Error on invalid input.
+     */
+    public function merge_students($survivor_id, $loser_id)
+    {
+        global $wpdb;
+
+        $survivor_id = (int) $survivor_id;
+        $loser_id = (int) $loser_id;
+        if ($survivor_id <= 0 || $loser_id <= 0 || $survivor_id === $loser_id) {
+            return new WP_Error('merge_invalid', 'Invalid merge pair.');
+        }
+
+        $survivor = $this->get_student($survivor_id);
+        $loser = $this->get_student($loser_id);
+        if (!$survivor || !$loser) {
+            return new WP_Error('merge_missing', 'Account not found.');
+        }
+
+        // 1. AUDIT FIRST — full loser row + survivor snapshot, before anything moves.
+        $log = get_option('dogology_merge_log', array());
+        if (!is_array($log)) {
+            $log = array();
+        }
+        $log[] = array(
+            'ts' => current_time('mysql'),
+            'survivor_id' => $survivor_id,
+            'loser_id' => $loser_id,
+            'loser_row' => wp_json_encode($loser),
+            'survivor_row' => wp_json_encode($survivor),
+        );
+        if (count($log) > 100) {
+            $log = array_slice($log, -100);
+        }
+        update_option('dogology_merge_log', $log, false);
+        error_log("[Dogology_Student_DB] MERGE: student {$loser_id} -> {$survivor_id}");
+
+        $table_progress = $wpdb->prefix . 'dogology_progress';
+
+        // 2. UNION progress. Enrollment markers (lesson_id = 0) become
+        //    enroll_student() calls; lesson rows keep max(completed).
+        $loser_rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT course_id, lesson_id, completed FROM $table_progress WHERE user_id = %d",
+            $loser_id
+        ));
+        foreach ((array) $loser_rows as $row) {
+            $course_id = (int) $row->course_id;
+            $lesson_id = (int) $row->lesson_id;
+            if ($lesson_id === 0) {
+                $this->enroll_student($survivor_id, $course_id);
+                continue;
+            }
+            // Make sure the survivor is enrolled in the course at all.
+            $this->enroll_student($survivor_id, $course_id);
+            $existing = $this->get_lesson_progress($survivor_id, $lesson_id);
+            if ($existing === null) {
+                $this->update_lesson_progress($survivor_id, $course_id, $lesson_id, (int) $row->completed);
+            } elseif ((int) $row->completed > (int) $existing) {
+                $this->update_lesson_progress($survivor_id, $course_id, $lesson_id, (int) $row->completed);
+            }
+        }
+        $wpdb->delete($table_progress, array('user_id' => $loser_id));
+
+        // 3. IDENTITY FIELDS. Clear the loser's unique identifiers first
+        //    (UNIQUE KEY line_uid), then copy onto the survivor where empty.
+        $this->update_student($loser_id, array('line_uid' => null, 'passkey_id' => null));
+
+        $updates = array();
+        if (empty($survivor->line_uid) && !empty($loser->line_uid)) {
+            $updates['line_uid'] = $loser->line_uid;
+        }
+        if (empty($survivor->passkey_id) && !empty($loser->passkey_id)) {
+            $updates['passkey_id'] = $loser->passkey_id;
+        }
+        if (empty($survivor->profile_picture) && !empty($loser->profile_picture)) {
+            $updates['profile_picture'] = $loser->profile_picture;
+        }
+        if (empty($survivor->display_name) && !empty($loser->display_name)) {
+            $updates['display_name'] = $loser->display_name;
+        }
+        if (!empty($updates)) {
+            $this->update_student($survivor_id, $updates);
+        }
+
+        // 4. LOGIN-EVENT HISTORY (best effort — table may predate this feature).
+        try {
+            $table_logins = $wpdb->prefix . 'dogology_login_events';
+            $wpdb->query($wpdb->prepare(
+                "UPDATE $table_logins SET user_id = %d WHERE user_id = %d",
+                $survivor_id,
+                $loser_id
+            ));
+        } catch (\Throwable $e) {
+            // History move is nice-to-have; never fail the merge for it.
+        }
+
+        // 5. Remove the loser row (already fully audit-logged above).
+        $this->delete_student($loser_id);
+
+        return true;
+    }
+
     public function get_student($id)
     {
         global $wpdb;

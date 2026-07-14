@@ -68,6 +68,9 @@ $_err = [
     'passkey_unknown' => $_auth_lang === 'th' ? 'ไม่พบ Passkey นี้ในระบบ' : 'Passkey not recognized.',
     'not_logged_in'   => $_auth_lang === 'th' ? 'กรุณาเข้าสู่ระบบก่อน' : 'Not logged in.',
     'otp_cooldown'    => $_auth_lang === 'th' ? 'ขอรหัสถี่เกินไป กรุณารอสักครู่แล้วลองใหม่' : 'Too many code requests. Please wait a moment and try again.',
+    'recover_not_found' => $_auth_lang === 'th' ? 'ยืนยันอีเมลสำเร็จ แต่ไม่พบคอร์สภายใต้อีเมลนี้ ลองอีเมลอื่นที่อาจใช้ตอนซื้อดูได้เลย' : 'Email verified, but no purchases were found under this email. Try another email you may have used at checkout.',
+    'merge_expired'   => $_auth_lang === 'th' ? 'คำขอรวมบัญชีหมดอายุ กรุณาเริ่มใหม่อีกครั้ง' : 'The merge request expired. Please start again.',
+    'merge_failed'    => $_auth_lang === 'th' ? 'รวมบัญชีไม่สำเร็จ กรุณาติดต่อทีมงาน Dogology' : 'Account merge failed. Please contact Dogology support.',
 ];
 
 // --- FORM HANDLERS ---
@@ -145,13 +148,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($current_student) {
                 // Scenario: Onboarding (Logged In User verifying email)
                 $existing = $db->get_student_by_email($email);
+                $_dl_is_recover = isset($_POST['context']) && $_POST['context'] === 'recover';
                 if ($existing && $existing->id != $current_student->id) {
-                    $msg = $_err['email_taken'];
+                    // MERGE OFFER: ownership of the email is now proven via OTP,
+                    // and it belongs to another account (typically the one holding
+                    // the purchases). Offer to merge instead of dead-ending.
+                    set_transient('dogology_merge_' . $current_student->id, array(
+                        'target_id' => (int) $existing->id,
+                        'email' => $email,
+                    ), 10 * MINUTE_IN_SECONDS);
+                    $merge_url = add_query_arg(array('step' => 'merge', 't' => time()), home_url('/student-login'));
+                    if (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1') {
+                        echo json_encode(array('success' => true, 'redirect' => $merge_url));
+                        exit;
+                    }
+                    wp_redirect($merge_url);
+                    exit;
+                } elseif ($_dl_is_recover) {
+                    // Recover flow: email verified, but no OTHER account holds it,
+                    // so there is nothing to merge. Do NOT bind the email here —
+                    // the user is hunting for purchases, not changing their email.
+                    $msg = $_err['recover_not_found'];
                     if (isset($_POST['is_ajax']) && $_POST['is_ajax'] == '1') {
                         echo json_encode(array('success' => false, 'message' => $msg));
                         exit;
                     }
                     $error = $msg;
+                    $step = 'recover';
                 } else {
                     $db->update_student($current_student->id, array(
                         'email' => $email,
@@ -321,6 +344,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode(array('success' => true, 'url' => $url));
         exit;
     }
+
+    // 8. Confirm Account Merge (current account absorbs into the email account)
+    if ($action === 'confirm_merge' && $_dl_nonce_valid) {
+        $current_student = Dogology_Auth::get_current_student();
+        if (!$current_student) {
+            $error = $_err['not_logged_in'];
+        } else {
+            $pending = get_transient('dogology_merge_' . $current_student->id);
+            if (!$pending || empty($pending['target_id'])) {
+                $error = $_err['merge_expired'];
+            } else {
+                $db = new Dogology_Student_DB();
+                $survivor_id = (int) $pending['target_id'];
+                $result = $db->merge_students($survivor_id, (int) $current_student->id);
+                delete_transient('dogology_merge_' . $current_student->id);
+                if (is_wp_error($result)) {
+                    $error = $_err['merge_failed'];
+                } else {
+                    // The email just proved ownership via OTP — mark it verified.
+                    $survivor = $db->get_student($survivor_id);
+                    if ($survivor && empty($survivor->email_verified_at)) {
+                        $db->update_student($survivor_id, array('email_verified_at' => current_time('mysql')));
+                    }
+                    Dogology_Auth::logout();
+                    Dogology_Auth::login_student($survivor_id);
+                    wp_redirect(Dogology_Auth::get_dashboard_url_with_token($survivor_id));
+                    exit;
+                }
+            }
+        }
+    }
+
+    // 9. Cancel Merge
+    if ($action === 'cancel_merge' && $_dl_nonce_valid) {
+        $current_student = Dogology_Auth::get_current_student();
+        if ($current_student) {
+            delete_transient('dogology_merge_' . $current_student->id);
+        }
+        wp_redirect(home_url('/my-courses'));
+        exit;
+    }
 }
 
 // If already logged in (AND NOT just logged out) (AND NOT passkey bridge)
@@ -329,7 +393,7 @@ if (!$just_logged_out && !$trigger_passkey_js && ($current_student = Dogology_Au
     // SOFT GATE: Allow all logged-in users to access dashboard.
     // Email verification warning will be shown via a banner on dashboard.php.
 
-    $is_onboarding = isset($_GET['step']) && ($_GET['step'] === 'onboarding' || $_GET['step'] === 'otp');
+    $is_onboarding = isset($_GET['step']) && in_array($_GET['step'], array('onboarding', 'otp', 'recover', 'merge'), true);
 
     // If not explicitly on onboarding page, redirect to dashboard
     if (!$is_onboarding) {
@@ -389,7 +453,16 @@ if (isset($_GET['action']) && $_GET['action'] === 'magic_login') {
                 // Check if email used by another account
                 $existing = $db->get_student_by_email($email);
                 if ($existing && $existing->id != $student_to_verify->id) {
-                    $error = $_err['email_taken'];
+                    // MERGE OFFER (magic-link path): the click proves email
+                    // ownership. Log in as the link's account and offer to merge
+                    // it into the account that holds this email.
+                    Dogology_Auth::login_student($student_to_verify->id);
+                    set_transient('dogology_merge_' . $student_to_verify->id, array(
+                        'target_id' => (int) $existing->id,
+                        'email' => $email,
+                    ), 10 * MINUTE_IN_SECONDS);
+                    wp_redirect(add_query_arg(array('step' => 'merge', 't' => time()), home_url('/student-login')));
+                    exit;
                 } else {
                     // Update User
                     $db->update_student($student_to_verify->id, array(
@@ -503,7 +576,7 @@ $is_returning_from_line = isset($_GET['code']) || isset($_GET['liffClientId']) |
 
 // EXCEPTION: If we are in 'onboarding' or 'otp' steps, NEVER show the generic "Logging in" loading screen.
 // We want the user to see the verification UI.
-$is_verification_step = isset($_GET['step']) && ($_GET['step'] === 'onboarding' || $_GET['step'] === 'otp');
+$is_verification_step = isset($_GET['step']) && in_array($_GET['step'], array('onboarding', 'otp', 'recover', 'merge'), true);
 
 // Show Loading if: LINE Browser OR Returning from LINE Login (but NOT if we just handled a manual QR code which failed)
 // AND NOT if we are explicitly acting on a verification step
@@ -585,6 +658,15 @@ $auth_trans = [
         'passkey_bridge_fallback' => 'หากไม่มีอะไรเกิดขึ้น',
         'passkey_bridge_link' => 'ไปที่แดชบอร์ด',
         'error_nonce' => 'Token ไม่ถูกต้อง กรุณารีเฟรชหน้า',
+        'recover_title' => 'ค้นหาคอร์สที่ซื้อไว้',
+        'recover_desc' => 'กรอกอีเมลที่ใช้ตอนซื้อคอร์ส เราจะส่งรหัสยืนยันไปให้ทางอีเมล',
+        'merge_title' => 'พบบัญชีของคุณแล้ว!',
+        'merge_found_email' => 'บัญชีภายใต้อีเมล',
+        'merge_courses_count' => 'มีคอร์สอยู่ %d รายการ',
+        'merge_courses_zero' => 'มีบัญชีอยู่ในระบบ แต่ยังไม่มีคอร์ส',
+        'merge_explain' => 'หลังจากรวมบัญชีแล้ว จะเข้าสู่ระบบด้วย LINE หรืออีเมลนี้ก็ได้ และเห็นคอร์สทั้งหมดในที่เดียว',
+        'btn_merge' => 'รวมบัญชี & ไปที่คอร์สของฉัน',
+        'btn_merge_cancel' => 'ไม่ใช่ตอนนี้',
         'iab_notice' => 'กำลังเปิดผ่านแอป Facebook/Instagram อยู่ แนะนำให้กดปุ่ม ⋯ มุมขวาบน แล้วเลือก "เปิดในเบราว์เซอร์" จะได้เข้าเรียนครั้งหน้าโดยไม่ต้องล็อกอินใหม่',
         'iab_copy' => 'คัดลอกลิงก์ไปเปิดใน Chrome / Safari',
         'iab_copied' => 'คัดลอกแล้ว! เปิดเบราว์เซอร์แล้ววางลิงก์',
@@ -628,6 +710,15 @@ $auth_trans = [
         'passkey_bridge_fallback' => 'If nothing happens,',
         'passkey_bridge_link' => 'go to dashboard',
         'error_nonce' => 'Invalid security token. Please refresh.',
+        'recover_title' => 'Find Your Purchases',
+        'recover_desc' => 'Enter the email you used at checkout. We will send you a verification code.',
+        'merge_title' => 'We Found Your Account!',
+        'merge_found_email' => 'The account under',
+        'merge_courses_count' => 'has %d course(s)',
+        'merge_courses_zero' => 'exists, but has no courses yet',
+        'merge_explain' => 'After merging, you can sign in with LINE or this email and see all your courses in one place.',
+        'btn_merge' => 'Merge & Go to My Courses',
+        'btn_merge_cancel' => 'Not now',
         'iab_notice' => 'You\'re inside the Facebook/Instagram app. Tap ⋯ (top right) → "Open in browser" so you stay logged in next time.',
         'iab_copy' => 'Copy link to open in Chrome / Safari',
         'iab_copied' => 'Copied! Open your browser and paste.',
@@ -1338,6 +1429,166 @@ $_dl_show_iab_strip = in_array($_dl_auth_parsed['label'], array('Facebook in-app
                                 }
                             });
                         </script>
+                    <?php endif; ?>
+
+                <?php elseif ($step === 'recover'): ?>
+                    <?php
+                    // FIND MY PURCHASES: email + OTP, context=recover.
+                    // Works logged-in (LINE account hunting for email purchases →
+                    // merge offer) AND logged-out (plain email login by another name).
+                    ?>
+                    <div id="dl-recover-step-email">
+                        <div class="dl-brand-title" style="margin-bottom: 10px; text-align:center;"><?php echo esc_html($at['recover_title']); ?></div>
+                        <p style="text-align:center; color:#666; font-size:14px; margin-bottom: 20px;">
+                            <?php echo esc_html($at['recover_desc']); ?>
+                        </p>
+                        <form id="form-recover-email" method="post">
+                            <input type="hidden" name="action" value="send_otp">
+                            <input type="hidden" name="_dl_nonce" value="<?php echo wp_create_nonce('dl_auth_action'); ?>">
+                            <input type="hidden" name="is_ajax" value="1">
+                            <div class="dl-form-group">
+                                <label class="dl-label"><?php echo esc_html($at['label_email']); ?></label>
+                                <input type="email" name="email" id="recover-email-input" class="dl-input" placeholder="name@example.com" required autofocus>
+                            </div>
+                            <button type="submit" id="btn-recover-send" class="dl-btn-primary"><?php echo esc_html($at['btn_send_code']); ?></button>
+                        </form>
+                        <div style="margin-top: 16px; text-align: center;">
+                            <a href="<?php echo esc_url(home_url('/my-courses')); ?>" style="color:#94a3b8; font-size:13px; font-weight:600; text-decoration:none;"><?php echo esc_html($at['btn_cancel']); ?></a>
+                        </div>
+                    </div>
+
+                    <div id="dl-recover-step-otp" style="display:none;">
+                        <div class="dl-brand-title" style="margin-bottom: 10px; text-align:center;"><?php echo esc_html($at['onboard_otp_title']); ?></div>
+                        <p style="text-align:center; color:#666; font-size:14px; margin-bottom: 20px;">
+                            <?php echo esc_html($at['onboard_otp_sent']); ?> <strong id="recover-otp-target"></strong>
+                        </p>
+                        <form id="form-recover-otp" method="post">
+                            <input type="hidden" name="action" value="verify_otp">
+                            <input type="hidden" name="_dl_nonce" value="<?php echo wp_create_nonce('dl_auth_action'); ?>">
+                            <input type="hidden" name="is_ajax" value="1">
+                            <input type="hidden" name="context" value="recover">
+                            <input type="hidden" name="email" id="recover-otp-email" value="">
+                            <div class="dl-form-group">
+                                <label class="dl-label"><?php echo esc_html($at['label_otp']); ?></label>
+                                <input type="text" name="otp" class="dl-input" placeholder="123456" maxlength="6"
+                                    style="text-align:center; letter-spacing:4px; font-size:24px;" required
+                                    autocomplete="one-time-code" inputmode="numeric"
+                                    oninput="this.value=this.value.replace(/[^0-9]/g,''); if(this.value.length===6){var b=document.getElementById('btn-recover-verify'); if(b && !b.disabled) b.click();}">
+                            </div>
+                            <button type="submit" id="btn-recover-verify" class="dl-btn-primary"><?php echo esc_html($at['btn_verify']); ?></button>
+                            <div style="margin-top: 12px; text-align: center;">
+                                <a href="#" onclick="document.getElementById('dl-recover-step-otp').style.display='none'; document.getElementById('dl-recover-step-email').style.display='block'; return false;"
+                                    style="color:#999; text-decoration:none; font-size:14px; font-weight:600;"><?php echo esc_html($at['btn_change_email']); ?></a>
+                            </div>
+                        </form>
+                    </div>
+
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function () {
+                            var formEmail = document.getElementById('form-recover-email');
+                            var formOtp = document.getElementById('form-recover-otp');
+                            var btnSend = document.getElementById('btn-recover-send');
+                            var btnVerify = document.getElementById('btn-recover-verify');
+                            var errNet = <?php echo wp_json_encode($_auth_lang === 'th' ? 'เครือข่ายมีปัญหา กรุณาลองใหม่' : 'Network error. Please try again.'); ?>;
+
+                            formEmail.addEventListener('submit', function (e) {
+                                e.preventDefault();
+                                var orig = btnSend.innerText;
+                                btnSend.innerText = <?php echo wp_json_encode($_auth_lang === 'th' ? 'กำลังส่ง...' : 'Sending...'); ?>;
+                                btnSend.disabled = true;
+                                var fd = new FormData(formEmail);
+                                fetch(window.location.href, { method: 'POST', body: fd })
+                                    .then(function (r) { return r.json(); })
+                                    .then(function (data) {
+                                        if (data.success) {
+                                            var email = fd.get('email');
+                                            document.getElementById('recover-otp-target').innerText = email;
+                                            document.getElementById('recover-otp-email').value = email;
+                                            document.getElementById('dl-recover-step-email').style.display = 'none';
+                                            document.getElementById('dl-recover-step-otp').style.display = 'block';
+                                            formOtp.querySelector('input[name="otp"]').focus();
+                                        } else {
+                                            dlToast(data.message || errNet, 'error');
+                                        }
+                                    })
+                                    .catch(function () { dlToast(errNet, 'error'); })
+                                    .finally(function () { btnSend.innerText = orig; btnSend.disabled = false; });
+                            });
+
+                            formOtp.addEventListener('submit', function (e) {
+                                e.preventDefault();
+                                var orig = btnVerify.innerText;
+                                btnVerify.innerText = '...';
+                                btnVerify.disabled = true;
+                                fetch(window.location.href, { method: 'POST', body: new FormData(formOtp) })
+                                    .then(function (r) { return r.json(); })
+                                    .then(function (data) {
+                                        if (data.success) {
+                                            window.location.href = data.redirect || '<?php echo esc_js(home_url('/my-courses')); ?>';
+                                        } else {
+                                            dlToast(data.message || errNet, 'error');
+                                        }
+                                    })
+                                    .catch(function () { dlToast(errNet, 'error'); })
+                                    .finally(function () { btnVerify.innerText = orig; btnVerify.disabled = false; });
+                            });
+                        });
+                    </script>
+
+                <?php elseif ($step === 'merge'): ?>
+                    <?php
+                    // MERGE CONFIRMATION: only reachable with a live merge token
+                    // (set after OTP proof). Reveals target-account course names —
+                    // safe here because email ownership is already proven.
+                    $current_student = Dogology_Auth::get_current_student();
+                    $merge_pending = $current_student ? get_transient('dogology_merge_' . $current_student->id) : false;
+                    $merge_target = ($merge_pending && !empty($merge_pending['target_id'])) ? (new Dogology_Student_DB())->get_student((int) $merge_pending['target_id']) : null;
+                    ?>
+                    <?php if (!$current_student || !$merge_target): ?>
+                        <div style="text-align:center;">
+                            <p style="color:#666; font-size:14px; margin-bottom:20px;"><?php echo esc_html($_err['merge_expired']); ?></p>
+                            <a href="<?php echo esc_url(add_query_arg('step', 'recover', home_url('/student-login'))); ?>" class="dl-btn-primary" style="text-decoration:none; text-align:center;"><?php echo esc_html($at['recover_title']); ?></a>
+                        </div>
+                    <?php else: ?>
+                        <?php
+                        $_dl_merge_db = new Dogology_Student_DB();
+                        $merge_courses = $_dl_merge_db->get_student_courses((int) $merge_target->id);
+                        ?>
+                        <div style="text-align:center; margin-bottom: 20px;">
+                            <div style="font-size: 44px; margin-bottom: 10px;">🎉</div>
+                            <div class="dl-brand-title" style="margin-bottom: 8px;"><?php echo esc_html($at['merge_title']); ?></div>
+                            <p style="color:#666; font-size:14px; margin:0;">
+                                <?php echo esc_html($at['merge_found_email']); ?> <strong><?php echo esc_html($merge_pending['email']); ?></strong><br>
+                                <?php echo !empty($merge_courses)
+                                    ? esc_html(sprintf($at['merge_courses_count'], count($merge_courses)))
+                                    : esc_html($at['merge_courses_zero']); ?>
+                            </p>
+                        </div>
+
+                        <?php if (!empty($merge_courses)): ?>
+                            <div style="background:#f0fdf9; border:1px solid #ccfbef; border-radius:12px; padding:14px 18px; margin-bottom:20px;">
+                                <?php foreach ($merge_courses as $mc): ?>
+                                    <div style="display:flex; align-items:center; gap:8px; padding:4px 0; color:#0f766e; font-size:14px; font-weight:600;">
+                                        <span>✓</span><span><?php echo esc_html($mc->post_title); ?></span>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+
+                        <p style="color:#94a3b8; font-size:13px; text-align:center; margin-bottom:20px;">
+                            <?php echo esc_html($at['merge_explain']); ?>
+                        </p>
+
+                        <form method="post" onsubmit="var b=this.querySelector('button[type=submit]'); b.disabled=true; b.innerText='...';">
+                            <input type="hidden" name="action" value="confirm_merge">
+                            <input type="hidden" name="_dl_nonce" value="<?php echo wp_create_nonce('dl_auth_action'); ?>">
+                            <button type="submit" class="dl-btn-primary" style="background:#00AB8E;"><?php echo esc_html($at['btn_merge']); ?></button>
+                        </form>
+                        <form method="post" style="margin-top: 14px; text-align:center;">
+                            <input type="hidden" name="action" value="cancel_merge">
+                            <input type="hidden" name="_dl_nonce" value="<?php echo wp_create_nonce('dl_auth_action'); ?>">
+                            <button type="submit" style="background:none; border:none; color:#94a3b8; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;"><?php echo esc_html($at['btn_merge_cancel']); ?></button>
+                        </form>
                     <?php endif; ?>
 
                 <?php endif; ?>
