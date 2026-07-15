@@ -244,60 +244,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $line_uid    = $claimed_uid; // default: legacy behaviour (trust the client)
         $incoming_email = isset($_POST['email']) ? sanitize_email($_POST['email']) : '';
 
-        // ── S2: shadow-first LINE identity verification ──────────────────────
-        // The client also posts liff.getIDToken(). Verify it server-side against
-        // LINE and record whether the VERIFIED identity matches the CLAIMED
-        // line_uid. The 'auth.line_login' WIRE STATE gates everything here:
-        //   old   → skip entirely (the deploy default → truly inert: NO verify
-        //            HTTP call, NO telemetry, zero login-path impact)
-        //   shadow→ observe only: verify + record would_accept/would_reject,
-        //            login still proceeds on $claimed_uid below
-        //   new   → enforce: reject unless verified, trust only the verified sub
-        // No PII (uid / id_token / sub) is ever recorded.
-        if (function_exists('dogology') && dogology()->has('line') && dogology()->has('shadow')) {
-            $dl_wire   = 'auth.line_login';
-            $dl_shadow = dogology()->get('shadow');
-            $dl_line   = dogology()->get('line');
-            $dl_state  = ($dl_shadow && method_exists($dl_shadow, 'state'))
-                ? $dl_shadow->state($dl_wire) : 'old';
+        // ── S2: server-side LINE identity verification (self-contained) ──────
+        // The client posts liff.getIDToken(); verify it against LINE and only
+        // trust the VERIFIED sub — never the client-supplied line_uid (which an
+        // attacker can forge to take over any account). Pure learning-plugin
+        // logic; no platform dependency. Mode is a learning option:
+        //   off     → legacy (trust claimed line_uid) — emergency rollback
+        //   shadow  → verify + record the outcome, still log in on the claimed
+        //             uid (soak: confirm real logins would_accept before enforcing)
+        //   enforce → reject unless the verified sub matches; trust ONLY the sub
+        // No PII (uid / id_token / sub) is recorded — only the outcome counters.
+        $dl_mode = get_option('dogology_learning_liff_verify', 'shadow');
+        if ($dl_mode === 'shadow' || $dl_mode === 'enforce') {
+            $dl_id_token = isset($_POST['id_token']) ? trim((string) $_POST['id_token']) : '';
 
-            // 'old' short-circuits BEFORE any verify HTTP call / telemetry.
-            if ($dl_line && ($dl_state === 'shadow' || $dl_state === 'new')) {
-                $dl_id_token = isset($_POST['id_token']) ? trim((string) $_POST['id_token']) : '';
+            // LINE Login channel_id = the id_token audience. Derived from the
+            // configured LIFF id ({channelId}-{suffix}) — same as the QR path.
+            $dl_liff_id = get_option('dogology_learning_liff_id', '');
+            $dl_channel = (is_string($dl_liff_id) && strpos($dl_liff_id, '-') !== false)
+                ? explode('-', $dl_liff_id)[0] : '';
 
-                // Derive the LINE Login channel_id from the configured LIFF id
-                // ({channelId}-{suffix}) — same derivation as the desktop path.
-                $dl_liff_id    = get_option('dogology_learning_liff_id', '');
-                $dl_channel_id = (is_string($dl_liff_id) && strpos($dl_liff_id, '-') !== false)
-                    ? explode('-', $dl_liff_id)[0] : '';
+            $dl_verify = ($dl_id_token !== '' && $dl_channel !== '')
+                ? Dogology_Auth::verify_line_id_token($dl_id_token, $dl_channel)
+                : ['ok' => false, 'error' => 'absent'];
 
-                $dl_verify = ($dl_id_token !== '' && $dl_channel_id !== '')
-                    ? $dl_line->verify_id_token($dl_id_token, $dl_channel_id)
-                    : ['ok' => false, 'error' => 'absent'];
+            if (!empty($dl_verify['ok']) && isset($dl_verify['sub'])) {
+                $dl_outcome = ($dl_verify['sub'] === $claimed_uid)
+                    ? 'would_accept' : 'would_reject_mismatch';
+            } else {
+                $dl_outcome = ($dl_id_token === '')
+                    ? 'would_reject_absent' : 'would_reject_failed';
+            }
+            Dogology_Auth::record_liff_verify_outcome($dl_outcome);
 
-                if (!empty($dl_verify['ok']) && isset($dl_verify['sub'])) {
-                    $dl_outcome = ($dl_verify['sub'] === $claimed_uid)
-                        ? 'would_accept' : 'would_reject_mismatch';
-                } else {
-                    $dl_outcome = ($dl_id_token === '')
-                        ? 'would_reject_absent' : 'would_reject_verify_failed';
+            if ($dl_mode === 'enforce') {
+                if ($dl_outcome !== 'would_accept') {
+                    echo json_encode(array('success' => false, 'message' => $_err['invalid_token']));
+                    exit;
                 }
-
-                $dl_t = dogology()->get('telemetry');
-                if ($dl_t) {
-                    // Distinct statuses (not 'mismatch'/'error') so this does not
-                    // trip the tracking-shadow regression invariant.
-                    $dl_t->record('shadow', $dl_wire, $dl_outcome, []);
-                }
-
-                // Enforcement only in 'new'.
-                if ($dl_state === 'new') {
-                    if ($dl_outcome !== 'would_accept') {
-                        echo json_encode(array('success' => false, 'message' => $_err['invalid_token']));
-                        exit;
-                    }
-                    $line_uid = (string) $dl_verify['sub']; // trust ONLY the verified identity
-                }
+                $line_uid = (string) $dl_verify['sub']; // trust ONLY the verified identity
             }
         }
         // ─────────────────────────────────────────────────────────────────────

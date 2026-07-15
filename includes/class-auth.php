@@ -246,6 +246,68 @@ class Dogology_Auth
     }
 
     /**
+     * S2: verify a LIFF id_token against LINE's verify endpoint (server-side).
+     *
+     * The LIFF login must NOT trust a client-supplied line_uid — an attacker can
+     * POST any victim's userId and be logged in as them. liff.getIDToken() is a
+     * JWT LINE signs; POSTing it to oauth2/v2.1/verify makes LINE validate the
+     * signature, audience (client_id) and expiry and return the decoded claims.
+     * Only the returned `sub` may be trusted as the LINE user id.
+     *
+     * @param string $id_token   From liff.getIDToken() (client-supplied).
+     * @param string $channel_id LINE Login channel_id = the token audience.
+     * @return array{ok:bool, sub?:string, name?:string, picture?:string, email?:string, error?:string}
+     */
+    public static function verify_line_id_token($id_token, $channel_id)
+    {
+        $id_token   = is_string($id_token) ? trim($id_token) : '';
+        $channel_id = is_string($channel_id) ? trim($channel_id) : '';
+        if ($id_token === '' || $channel_id === '') {
+            return array('ok' => false, 'error' => 'missing_input');
+        }
+
+        $response = wp_remote_post('https://api.line.me/oauth2/v2.1/verify', array(
+            'timeout' => 5, // interactive login path — fail fast on a slow LINE
+            'headers' => array('Content-Type' => 'application/x-www-form-urlencoded'),
+            'body'    => array('id_token' => $id_token, 'client_id' => $channel_id),
+        ));
+        if (is_wp_error($response)) {
+            return array('ok' => false, 'error' => 'http_error');
+        }
+
+        $code = (int) wp_remote_retrieve_response_code($response);
+        $data = json_decode(wp_remote_retrieve_body($response), true);
+        if ($code !== 200 || !is_array($data) || !empty($data['error']) || empty($data['sub'])) {
+            $err = (is_array($data) && !empty($data['error'])) ? $data['error'] : ('http_' . $code);
+            return array('ok' => false, 'error' => (string) $err);
+        }
+
+        return array(
+            'ok'      => true,
+            'sub'     => (string) $data['sub'],
+            'name'    => isset($data['name']) ? (string) $data['name'] : '',
+            'picture' => isset($data['picture']) ? (string) $data['picture'] : '',
+            'email'   => isset($data['email']) ? (string) $data['email'] : '',
+        );
+    }
+
+    /**
+     * Record a LIFF-verify outcome to a small rolling counter option (no PII) so
+     * the soak can confirm real logins would_accept before flipping
+     * dogology_learning_liff_verify to 'enforce'. Read via get-option.
+     */
+    public static function record_liff_verify_outcome($outcome)
+    {
+        $counts = get_option('dogology_learning_liff_verify_counts', array());
+        if (!is_array($counts)) {
+            $counts = array();
+        }
+        $counts[$outcome] = (int) (isset($counts[$outcome]) ? $counts[$outcome] : 0) + 1;
+        $counts['_last']  = $outcome;
+        update_option('dogology_learning_liff_verify_counts', $counts, false);
+    }
+
+    /**
      * Client IP (Cloudflare-aware — site is proxied, REMOTE_ADDR is the CF edge)
      */
     private static function get_client_ip()
