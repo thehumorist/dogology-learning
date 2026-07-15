@@ -240,8 +240,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // 3. LIFF Login
     if ($action === 'liff_login') {
-        $line_uid = sanitize_text_field($_POST['line_uid']);
+        $claimed_uid = isset($_POST['line_uid']) ? sanitize_text_field($_POST['line_uid']) : '';
+        $line_uid    = $claimed_uid; // default: legacy behaviour (trust the client)
         $incoming_email = isset($_POST['email']) ? sanitize_email($_POST['email']) : '';
+
+        // ── S2: shadow-first LINE identity verification ──────────────────────
+        // The client also posts liff.getIDToken(). Verify it server-side against
+        // LINE and record whether the VERIFIED identity matches the CLAIMED
+        // line_uid. The 'auth.line_login' WIRE STATE gates everything here:
+        //   old   → skip entirely (the deploy default → truly inert: NO verify
+        //            HTTP call, NO telemetry, zero login-path impact)
+        //   shadow→ observe only: verify + record would_accept/would_reject,
+        //            login still proceeds on $claimed_uid below
+        //   new   → enforce: reject unless verified, trust only the verified sub
+        // No PII (uid / id_token / sub) is ever recorded.
+        if (function_exists('dogology') && dogology()->has('line') && dogology()->has('shadow')) {
+            $dl_wire   = 'auth.line_login';
+            $dl_shadow = dogology()->get('shadow');
+            $dl_line   = dogology()->get('line');
+            $dl_state  = ($dl_shadow && method_exists($dl_shadow, 'state'))
+                ? $dl_shadow->state($dl_wire) : 'old';
+
+            // 'old' short-circuits BEFORE any verify HTTP call / telemetry.
+            if ($dl_line && ($dl_state === 'shadow' || $dl_state === 'new')) {
+                $dl_id_token = isset($_POST['id_token']) ? trim((string) $_POST['id_token']) : '';
+
+                // Derive the LINE Login channel_id from the configured LIFF id
+                // ({channelId}-{suffix}) — same derivation as the desktop path.
+                $dl_liff_id    = get_option('dogology_learning_liff_id', '');
+                $dl_channel_id = (is_string($dl_liff_id) && strpos($dl_liff_id, '-') !== false)
+                    ? explode('-', $dl_liff_id)[0] : '';
+
+                $dl_verify = ($dl_id_token !== '' && $dl_channel_id !== '')
+                    ? $dl_line->verify_id_token($dl_id_token, $dl_channel_id)
+                    : ['ok' => false, 'error' => 'absent'];
+
+                if (!empty($dl_verify['ok']) && isset($dl_verify['sub'])) {
+                    $dl_outcome = ($dl_verify['sub'] === $claimed_uid)
+                        ? 'would_accept' : 'would_reject_mismatch';
+                } else {
+                    $dl_outcome = ($dl_id_token === '')
+                        ? 'would_reject_absent' : 'would_reject_verify_failed';
+                }
+
+                $dl_t = dogology()->get('telemetry');
+                if ($dl_t) {
+                    // Distinct statuses (not 'mismatch'/'error') so this does not
+                    // trip the tracking-shadow regression invariant.
+                    $dl_t->record('shadow', $dl_wire, $dl_outcome, []);
+                }
+
+                // Enforcement only in 'new'.
+                if ($dl_state === 'new') {
+                    if ($dl_outcome !== 'would_accept') {
+                        echo json_encode(array('success' => false, 'message' => $_err['invalid_token']));
+                        exit;
+                    }
+                    $line_uid = (string) $dl_verify['sub']; // trust ONLY the verified identity
+                }
+            }
+        }
+        // ─────────────────────────────────────────────────────────────────────
 
         $db = new Dogology_Student_DB();
         global $wpdb;
@@ -1731,6 +1790,10 @@ $_dl_show_iab_strip = in_array($_dl_auth_parsed['label'], array('Facebook in-app
                     formData.append('display_name', profile.displayName);
                     formData.append('picture_url', profile.pictureUrl);
                     if (userEmail) formData.append('email', userEmail);
+                    // S2: send the raw LINE id_token so the server can verify the
+                    // claimed identity against LINE (oauth2/v2.1/verify). Additive —
+                    // the server only shadows this until the auth wire is flipped.
+                    try { var _idToken = liff.getIDToken(); if (_idToken) formData.append('id_token', _idToken); } catch (e) {}
 
                     // Post to raw route to bypass WP Rewrite/Canonical redirect issues (Fixes 400 Bad Request)
                     fetch("<?php echo home_url('/?dl_route=login'); ?>", { method: 'POST', body: formData })

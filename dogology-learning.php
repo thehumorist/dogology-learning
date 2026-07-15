@@ -3,7 +3,7 @@
  * Plugin Name: Dogology Learning
  * Plugin URI:  https://dogology.org
  * Description: The core learning platform for Dogology. Manages courses, students (custom auth), and progress tracking.
- * Version:     1.5.3
+ * Version:     1.5.4
  * Author:      Dogology Dev
  * Text Domain: dogology-learning
  */
@@ -12,9 +12,30 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('DOGOLOGY_LEARNING_VERSION', '1.5.3');
+define('DOGOLOGY_LEARNING_VERSION', '1.5.4');
 define('DOGOLOGY_LEARNING_PATH', plugin_dir_path(__FILE__));
 define('DOGOLOGY_LEARNING_URL', plugin_dir_url(__FILE__));
+
+// SURGICAL opcache invalidation on version bump (added 2026-07-15).
+// Prod runs opcache.validate_timestamps=0 → deployed .php serve stale bytecode
+// until invalidated. Invalidate ONLY this plugin's own files — never a global
+// opcache_reset() (it transiently 500s concurrent requests loading other
+// plugins' classes). Templates (e.g. templates/auth.php) are include()d at
+// runtime and cached too, so cover templates/ + admin/ as well as includes/.
+// BUMP DOGOLOGY_LEARNING_VERSION whenever any of this plugin's files change.
+if (function_exists('opcache_invalidate') && !defined('DOGOLOGY_LEARNING_SKIP_OPCACHE_RESET')) {
+    $dl_last_reset = get_option('dogology_learning_opcache_reset_version', '');
+    if ($dl_last_reset !== DOGOLOGY_LEARNING_VERSION) {
+        @opcache_invalidate(__FILE__, true);
+        foreach (['includes', 'templates', 'admin'] as $dl_sub) {
+            foreach (glob(DOGOLOGY_LEARNING_PATH . $dl_sub . '/*.php') ?: [] as $dl_f) {
+                @opcache_invalidate($dl_f, true);
+            }
+        }
+        update_option('dogology_learning_opcache_reset_version', DOGOLOGY_LEARNING_VERSION, false);
+    }
+    unset($dl_last_reset);
+}
 
 // Custom Auth Salt (Decoupled from WP)
 if (!defined('DOGOLOGY_AUTH_SALT')) {
