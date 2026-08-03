@@ -38,6 +38,41 @@ class Dogology_Learning_Integration_Commerce
      * Write debug log to SlipOK log file for unified debugging.
      * PII is redacted — only IDs, flags, and presence booleans are persisted.
      */
+    /**
+     * A paid order did NOT result in course access — make it visible.
+     *
+     * Every failure path below used to write a line to slipok-debug.log and
+     * nothing else: no telemetry, no admin notice, no retry. A customer could
+     * pay and never get in, and the only trace was a file nobody reads. The
+     * platform invariant could not see it either, so the first signal was a
+     * support message.
+     *
+     * This records a platform telemetry `health` row so the skip surfaces in
+     * `platform-health` / `telemetry-query`, which IS where we look. Kept
+     * PII-free: order id, cohort/course ids and a reason slug only — never the
+     * buyer's name, email or LINE id (telemetry redacts too, but do not rely on
+     * that as the only defence).
+     *
+     * Null-guarded per the platform consumer contract: learning must keep
+     * working when the platform is absent or predates this service.
+     */
+    private function record_skip($reason, $order_id, array $context = array())
+    {
+        if (!function_exists('dogology')) {
+            return;
+        }
+        $telemetry = dogology()->get('telemetry');
+        if (!$telemetry) {
+            return;
+        }
+        $telemetry->record(
+            'health',
+            'learning.enrollment_skipped',
+            'error',
+            array_merge(array('reason' => $reason, 'order_id' => (int) $order_id), $context)
+        );
+    }
+
     private function debug_log($message, $data = null)
     {
         // Use protected log directory (same as Commerce plugin)
@@ -184,6 +219,10 @@ class Dogology_Learning_Integration_Commerce
                 'cohort_id' => $cohort_id,
                 'help' => 'Edit the cohort in Dogology Commerce and set "Linked Learning Course".'
             ]);
+            // Operator misconfiguration, and the most likely genuine cause of a
+            // paid-but-no-access customer: the cohort sells fine, it just has no
+            // course attached. Silent until now.
+            $this->record_skip('no_linked_course', $order_id, array('cohort_id' => $cohort_id));
             return;
         }
 
@@ -209,6 +248,9 @@ class Dogology_Learning_Integration_Commerce
         // Must have at least one identity
         if (empty($user_data['line_user_id']) && empty($user_data['email'])) {
             $this->debug_log("EXITING - no LINE ID or email");
+            // Guest checkout that captured only a phone number: there is no key
+            // to hang a student record on, so access can never be granted.
+            $this->record_skip('no_identity', $order_id, array('course_id' => $target_course_id));
             return;
         }
 
@@ -216,6 +258,14 @@ class Dogology_Learning_Integration_Commerce
 
         if (!$user_id) {
             $this->debug_log("FAILED to create/update user", ['order_id' => $order_id]);
+            // upsert_user() returns false on a UNIQUE collision (see
+            // class-data.php) — e.g. this email or LINE id already belongs to a
+            // different student row. Needs a human to merge the records.
+            $this->record_skip('upsert_user_failed', $order_id, array(
+                'course_id'   => $target_course_id,
+                'has_line'    => !empty($user_data['line_user_id']),
+                'has_email'   => !empty($user_data['email']),
+            ));
             return;
         }
 
@@ -236,6 +286,14 @@ class Dogology_Learning_Integration_Commerce
                 'user_id' => $user_id,
                 'course_id' => $target_course_id
             ]);
+            // The insert itself failed (DB error). Everything upstream
+            // succeeded, so this is the one path where a retry would plausibly
+            // work — worth knowing how often it actually happens before
+            // building one.
+            $this->record_skip('enroll_insert_failed', $order_id, array(
+                'user_id'   => (int) $user_id,
+                'course_id' => (int) $target_course_id,
+            ));
         }
     }
 }
