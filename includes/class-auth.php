@@ -469,9 +469,14 @@ class Dogology_Auth
 </body>
 </html>';
 
+        // S5 (2026-08-03): removed a hardcoded `Bcc: <personal address>` that
+        // silently copied EVERY student's OTP email — address plus one-time
+        // login code — to a single inbox. That is a standing privacy leak and
+        // an account-takeover vector for anyone with access to that mailbox.
+        // Do not reintroduce a BCC here; if delivery needs auditing, log the
+        // send OUTCOME (no code, no recipient) rather than copying the mail.
         $headers = array(
             'Content-Type: text/html; charset=UTF-8',
-            'Bcc: nattawut@dogology.org'
         );
 
         // ACTUAL SEND

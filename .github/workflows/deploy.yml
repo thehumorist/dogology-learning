@@ -1,46 +1,210 @@
 name: Deploy dogology-learning to production
 
-# Mirrors deploy pattern in dogology-mindmap and dogology-commerce.
-# Push to `main` triggers SFTP push to the production WordPress install.
-# Manual cache purge (WP Rocket + Cloudflare) still required after deploy.
+# Push to `main` deploys via SFTP.
+#
+# Two protections were added 2026-08-03 (ported from the dogology-platform
+# workflow) after telemetry showed a recurring class of production fatals
+# during deploy windows — `ParseError: Unclosed '{'`, `Class "…" not found`,
+# `Failed opening required '…'` — 39 of them in 11 days:
+#
+#   1. LINT GATE. Every PHP file is parsed before anything is uploaded. A
+#      syntax error now fails the build instead of landing on production.
+#
+#   2. BOOTSTRAP LAST. dogology-learning.php carries DOGOLOGY_LEARNING_VERSION,
+#      which fires this plugin's surgical opcache invalidation (bootstrap :19-36),
+#      and it requires the class files. Uploading it LAST means the new bootstrap
+#      only ever runs against class files that are already fully written —
+#      otherwise a request can hit a new bootstrap whose requires are still
+#      uploading (the Class-not-found / Failed-opening-required fatals seen in
+#      the other plugins on 2026-07-20..22).
+#
+#   3. CHANGED FILES ONLY (added 2026-08-03). SFTP overwrites each file in
+#      place, so for the duration of that write a request can compile a
+#      half-written file — the `ParseError: Unclosed '{'` half of the fatal
+#      class, which ordering alone does NOT fix. Re-uploading all ~100+ files
+#      every deploy maximised that exposure; uploading only what the push
+#      changed shrinks it to 1-3 files. Falls back to a full copy whenever
+#      there is no usable diff base.
+#
+#   4. VERSION-BUMP GATE. See the guard step — PHP without a version bump is a
+#      silent no-op deploy on this host.
+#
+# This is the AUTH plugin — a broken deploy here locks students out, and
+# Phase 6d will rewrite auth in this repo. It was the last plugin without
+# these protections; ported 2026-08-03 before touching auth code (S5).
+#
+# Manual step after deploy: bump DOGOLOGY_LEARNING_VERSION in
+# dogology-learning.php. PHP-only changes need no cache purge.
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+  # Manual trigger fallback — GitHub Actions occasionally drops push events on
+  # squash-merges. Recovery is `gh workflow run deploy.yml --ref main`.
   workflow_dispatch:
 
 jobs:
-  deploy:
+  lint:
+    name: PHP lint (gate)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Stage deploy folder
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # Match PRODUCTION (PHP 8.4, Remi). The purpose of this gate is
+          # "will this parse on prod", so prod parity is the correct target.
+          php-version: '8.4'
+
+      - name: Lint every PHP file
         run: |
-          mkdir -p ./deploy
-          rsync -av \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='deploy' \
-            --exclude='*.md' \
-            --exclude='log.md' \
-            --exclude='.DS_Store' \
-            --exclude='.env*' \
-            --exclude='.idea' \
-            --exclude='.vscode' \
-            --exclude='*.swp' \
-            --exclude='*.swo' \
-            --exclude='*.log' \
-            ./ ./deploy/
+          set -e
+          found=0
+          while IFS= read -r -d '' file; do
+            found=1
+            php -l "$file"
+          done < <(find . -path ./deploy -prune -o -name '*.php' -print0)
+          if [ "$found" -eq 0 ]; then
+            echo "No PHP files found to lint — refusing to deploy." >&2
+            exit 1
+          fi
 
-      - name: SFTP push to production
+  deploy:
+    name: SFTP push to production
+    needs: lint          # hard gate — no deploy unless lint is green
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need history to diff against the pre-push SHA
+
+      # Stage ONLY the files this push changed (see header note 3), preserving
+      # relative paths. Falls back to a full copy when there is no usable diff
+      # base (manual dispatch, first push, force-push, unreachable before-SHA).
+      - name: Stage changed files
+        id: stage
+        env:
+          BEFORE: ${{ github.event.before }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          BOOTSTRAP="dogology-learning.php"
+          rm -rf deploy && mkdir -p deploy
+
+          FULL=0
+          [ "$EVENT" != "push" ] && FULL=1
+          if [ -z "${BEFORE:-}" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then FULL=1; fi
+          if [ "$FULL" = "0" ] && ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then FULL=1; fi
+
+          if [ "$FULL" = "1" ]; then
+            echo "::notice::Full deploy (no usable diff base) — copying every file."
+            rsync -a \
+              --exclude='.git' --exclude='.github' --exclude='deploy' \
+              --exclude='*.md' --exclude='.DS_Store' --exclude='.env*' \
+              --exclude='.idea' --exclude='.vscode' --exclude='*.swp' \
+              --exclude='*.swo' --exclude='*.log' \
+              --exclude="$BOOTSTRAP" \
+              ./ deploy/
+            echo "mode=full"            >> "$GITHUB_OUTPUT"
+            echo "has_files=1"          >> "$GITHUB_OUTPUT"
+            echo "bootstrap_changed=1"  >> "$GITHUB_OUTPUT"
+            # Full mode has no diff base, so the version gate cannot be
+            # evaluated — say so loudly instead of silently passing.
+            echo "php_changed=0"        >> "$GITHUB_OUTPUT"
+            echo "version_bumped=0"     >> "$GITHUB_OUTPUT"
+            echo "::warning::Full deploy — version-bump gate NOT evaluated. Confirm the version constant was bumped, or prod keeps serving stale bytecode."
+            exit 0
+          fi
+
+          # ACMRT = Added/Copied/Modified/Renamed/Type-changed. Deletions are
+          # NOT propagated (delete_remote_files is false by design); they are
+          # reported so a human can remove the orphan deliberately.
+          # -z + quotepath=false: without these, git QUOTES non-ASCII paths
+          # ("\340\270...") so `[ -f "$f" ]` fails and the file is silently
+          # dropped from the deploy. NUL-delimited read handles them verbatim.
+          CHANGED=$(git -c core.quotepath=false diff --name-only -z --diff-filter=ACMRT "$BEFORE" "$GITHUB_SHA" | tr '\0' '\n' || true)
+          DELETED=$(git -c core.quotepath=false diff --name-only -z --diff-filter=D  "$BEFORE" "$GITHUB_SHA" | tr '\0' '\n' || true)
+
+          # Compare the actual VERSION VALUE, not merely "was the bootstrap
+          # touched". Editing a comment in the bootstrap used to satisfy the
+          # gate, and a version bump that collided with a concurrent commit
+          # (so the intended sed no-op'd) still looked like a bump. Both real
+          # failures on 2026-08-03.
+          # Match the EXACT constant — a loose [A-Z_]*VERSION pattern grabbed
+          # DMCP_FB_API_VERSION ('v21.0') in mcp-abilities and failed the build
+          # on 2026-08-03. Repos also carry *_DATA_VERSION siblings.
+          VERSION_CONST="DOGOLOGY_LEARNING_VERSION"
+          ver_of() { git show "$1:$BOOTSTRAP" 2>/dev/null | grep -m1 -oE "define\( *'$VERSION_CONST' *, *'[^']+'" | grep -oE "'[^']+'$" | tr -d "'" || true; }
+          VER_BEFORE=$(ver_of "$BEFORE")
+          VER_AFTER=$(ver_of "$GITHUB_SHA")
+          echo "version: '${VER_BEFORE:-?}' -> '${VER_AFTER:-?}'"
+          version_bumped=0
+          if [ -n "$VER_AFTER" ] && [ "$VER_BEFORE" != "$VER_AFTER" ]; then version_bumped=1; fi
+
+          php_changed=0; bootstrap_changed=0; staged=0
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            case "$f" in
+              .github/*|.git/*|deploy/*|*.md|*.log|.DS_Store|.env*|.idea/*|.vscode/*) continue ;;
+            esac
+            [ -f "$f" ] || continue
+            case "$f" in *.php) php_changed=1 ;; esac
+            if [ "$f" = "$BOOTSTRAP" ]; then bootstrap_changed=1; continue; fi
+            mkdir -p "deploy/$(dirname "$f")"
+            cp "$f" "deploy/$f"
+            staged=$((staged+1))
+            echo "  staged: $f"
+          done <<< "$CHANGED"
+
+          if [ -n "$DELETED" ]; then
+            echo "::notice::Deleted in git but NOT removed from the server (remove by hand if intended):"
+            echo "$DELETED" | sed 's/^/  deleted: /'
+          fi
+
+          echo "Staged $staged changed file(s); bootstrap_changed=$bootstrap_changed"
+          echo "mode=incremental"                  >> "$GITHUB_OUTPUT"
+          echo "has_files=$([ $staged -gt 0 ] && echo 1 || echo 0)" >> "$GITHUB_OUTPUT"
+          echo "bootstrap_changed=$bootstrap_changed" >> "$GITHUB_OUTPUT"
+          echo "php_changed=$php_changed"          >> "$GITHUB_OUTPUT"
+          echo "version_bumped=$version_bumped"    >> "$GITHUB_OUTPUT"
+
+      # HARD GATE: prod runs opcache.validate_timestamps=0, so a changed PHP
+      # file only takes effect when this plugin's version constant changes and
+      # fires the surgical invalidation. Shipping PHP without bumping the
+      # version is a SILENT NO-OP deploy — the files land but the old bytecode
+      # keeps serving. This bit us for real on 2026-08-03 (a version bump
+      # collided with a concurrent commit, so the follow-up shipped unbumped).
+      - name: Guard — PHP changed but version not bumped
+        if: steps.stage.outputs.mode == 'incremental' && steps.stage.outputs.php_changed == '1' && steps.stage.outputs.version_bumped != '1'
+        run: |
+          echo "::error::PHP files changed but the version constant in dogology-learning.php did not change."
+          echo "Production runs opcache.validate_timestamps=0. Without a version bump in"
+          echo "dogology-learning.php the invalidation never fires and this deploy would"
+          echo "silently have no effect. Bump the version constant and push again."
+          exit 1
+
+      - name: SFTP push — changed files FIRST (no version bump yet, no reset)
+        if: steps.stage.outputs.has_files == '1'
         uses: wlixcc/SFTP-Deploy-Action@v1.2.4
         with:
           server: ${{ secrets.SFTP_HOST }}
           username: ${{ secrets.SFTP_USERNAME }}
           password: ${{ secrets.SFTP_PASSWORD }}
-          local_path: ./deploy/*
-          remote_path: /www/domains/dogology.org/public_html/wp-content/plugins/dogology-learning
+          local_path: './deploy/*'
+          remote_path: '/www/domains/dogology.org/public_html/wp-content/plugins/dogology-learning'
+          sftp_only: true
+          delete_remote_files: false
+
+      - name: SFTP push — bootstrap LAST (its new version fires the opcache reset)
+        if: steps.stage.outputs.bootstrap_changed == '1'
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          server: ${{ secrets.SFTP_HOST }}
+          username: ${{ secrets.SFTP_USERNAME }}
+          password: ${{ secrets.SFTP_PASSWORD }}
+          local_path: './dogology-learning.php'
+          remote_path: '/www/domains/dogology.org/public_html/wp-content/plugins/dogology-learning/'
           sftp_only: true
           delete_remote_files: false
