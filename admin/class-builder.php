@@ -24,10 +24,13 @@ class Dogology_Learning_Builder
 
     public function register_page()
     {
-        // Hidden submenu: reachable by URL only, not shown in the sidebar.
-        // Rendered via parent=null so WP doesn't auto-add it to any menu.
+        // VISIBLE from 2026-08-04. This is the plugin's PRIMARY editing UI —
+        // it replaced the old Modules/Lessons pages — yet it was registered
+        // with parent=null, so it had no sidebar entry at all and was
+        // reachable only by someone who already knew the URL. The screen you
+        // use most should not be the one you cannot find.
         add_submenu_page(
-            null,
+            'dogology-learning',
             'Course Builder',
             'Course Builder',
             'manage_options',

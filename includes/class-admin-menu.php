@@ -57,24 +57,13 @@ class Dogology_Learning_Admin_Menu
             array($this, 'render_logins_page')
         );
 
-        // Modules + Lessons: hidden from menu but reachable by direct URL as a fallback
-        // during the builder deprecation window. Remove these entirely in the next release.
-        add_submenu_page(
-            null,
-            'Modules',
-            'Modules',
-            'manage_options',
-            'dogology-learning-modules',
-            array($this, 'render_modules_page')
-        );
-        add_submenu_page(
-            null,
-            'Lessons',
-            'Lessons',
-            'manage_options',
-            'dogology-learning-lessons',
-            array($this, 'render_lessons_page')
-        );
+        // Modules + Lessons pages REMOVED 2026-08-04. They were the pre-Course-
+        // Builder editors, already hidden (parent=null) and kept URL-reachable
+        // only "during the builder deprecation window… remove entirely in the
+        // next release". That window is long closed: Course Builder replaced
+        // them, and the only links to those URLs were inside their own views.
+        // Their render methods and admin/views/{modules,lessons}.php went with
+        // them — 616 lines of editor that could still write to live courses.
 
         // Submenu: Settings
         add_submenu_page(
@@ -100,16 +89,6 @@ class Dogology_Learning_Admin_Menu
     public function render_courses_page()
     {
         require_once DOGOLOGY_LEARNING_PATH . 'admin/views/courses.php';
-    }
-
-    public function render_modules_page()
-    {
-        require_once DOGOLOGY_LEARNING_PATH . 'admin/views/modules.php';
-    }
-
-    public function render_lessons_page()
-    {
-        require_once DOGOLOGY_LEARNING_PATH . 'admin/views/lessons.php';
     }
 
     public function render_settings_page()
