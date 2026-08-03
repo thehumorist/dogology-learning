@@ -22,7 +22,9 @@ class Dogology_Learning_Admin_Menu
             'dogology-learning',
             array($this, 'render_dashboard'), // Placeholder for now
             'dashicons-welcome-learn-more',
-            56
+            // 31 — Dogology block (30-35). Was 56, which dropped Learning far
+            // down the sidebar away from the rest of the family.
+            31
         );
 
         // Submenu: Students
