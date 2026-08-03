@@ -65,7 +65,7 @@ jobs:
           while IFS= read -r -d '' file; do
             found=1
             php -l "$file"
-          done < <(find . -path ./deploy -prune -o -name '*.php' -print0)
+          done < <(find . -path ./vendor -prune -o -path ./deploy -prune -o -name '*.php' -print0)
           if [ "$found" -eq 0 ]; then
             echo "No PHP files found to lint — refusing to deploy." >&2
             exit 1

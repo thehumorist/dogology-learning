@@ -3,7 +3,7 @@
  * Plugin Name: Dogology Learning
  * Plugin URI:  https://dogology.org
  * Description: The core learning platform for Dogology. Manages courses, students (custom auth), and progress tracking.
- * Version:     1.5.6
+ * Version:     1.5.7
  * Author:      Dogology Dev
  * Text Domain: dogology-learning
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('DOGOLOGY_LEARNING_VERSION', '1.5.6');
+define('DOGOLOGY_LEARNING_VERSION', '1.5.7');
 define('DOGOLOGY_LEARNING_PATH', plugin_dir_path(__FILE__));
 define('DOGOLOGY_LEARNING_URL', plugin_dir_url(__FILE__));
 
@@ -27,8 +27,17 @@ if (function_exists('opcache_invalidate') && !defined('DOGOLOGY_LEARNING_SKIP_OP
     $dl_last_reset = get_option('dogology_learning_opcache_reset_version', '');
     if ($dl_last_reset !== DOGOLOGY_LEARNING_VERSION) {
         @opcache_invalidate(__FILE__, true);
-        foreach (['includes', 'templates', 'admin'] as $dl_sub) {
-            foreach (glob(DOGOLOGY_LEARNING_PATH . $dl_sub . '/*.php') ?: [] as $dl_f) {
+        // Explicit glob list, mirroring dogology-commerce. NOTE the
+        // 'admin/views/*.php' entry: the previous list was ['includes',
+        // 'templates', 'admin'] + '/*.php', which is NON-recursive and so
+        // missed the 4 files in admin/views/. A deploy touching only those
+        // bumped the version, passed CI's version gate, landed the file — and
+        // prod kept serving the old bytecode forever under
+        // validate_timestamps=0. Found by audit 2026-08-03.
+        // vendor/ is deliberately excluded (huge + effectively immutable
+        // between deploys; a composer update needs a manual reset).
+        foreach (['includes/*.php', 'templates/*.php', 'admin/*.php', 'admin/views/*.php'] as $dl_glob) {
+            foreach (glob(DOGOLOGY_LEARNING_PATH . $dl_glob) ?: [] as $dl_f) {
                 @opcache_invalidate($dl_f, true);
             }
         }
