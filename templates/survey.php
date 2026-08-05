@@ -156,14 +156,28 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
       <script>
       (function () {
         var btn = document.getElementById('dlbtn');
-        if (!btn || typeof liff === 'undefined') return;
-        liff.init({liffId: '<?php echo esc_js($dl_liff); ?>'}).then(function () {
-          if (!liff.isInClient || !liff.isInClient()) return;   // real browser: leave the href alone
-          btn.addEventListener('click', function (e) {
-            e.preventDefault();
-            liff.openWindow({url: btn.getAttribute('data-raw'), external: true});
+        if (!btn) return;
+        var raw = btn.getAttribute('data-raw');
+        var inClient = /\bLine\//i.test(navigator.userAgent);   // true inside the LINE webview
+        if (!inClient) return;                                  // real browser: the href is correct
+
+        // The handler is attached NOW, not after liff.init() resolves. Attaching
+        // it in the .then() left a window where an early tap fell through to the
+        // href — and openExternalBrowser=1 cannot escape from inside a webview,
+        // which is exactly the "still opens in LIFF" symptom.
+        var ready = (typeof liff === 'undefined')
+          ? Promise.reject()
+          : liff.init({liffId: '<?php echo esc_js($dl_liff); ?>'});
+
+        btn.addEventListener('click', function (e) {
+          e.preventDefault();
+          ready.then(function () {
+            liff.openWindow({url: raw, external: true});
+          }).catch(function () {
+            // No SDK / init failed: last resort is the LINE-scheme escape.
+            location.href = 'line://app/openExternalBrowser?url=' + encodeURIComponent(raw);
           });
-        }).catch(function () { /* href fallback stands */ });
+        });
       })();
       </script>
       <?php endif; ?>
