@@ -773,8 +773,8 @@ DLCSS;
         return $id;
     }
 
-    const OPT_TEST_MODE = 'dogology_survey_test_mode';
-    const OPT_TEST_USER = 'dogology_survey_test_user';
+    const OPT_TEST_MODE = 'dogology_learning_survey_test_mode';
+    const OPT_TEST_USER = 'dogology_learning_survey_test_user';
 
     public static function test_mode()  { return get_option(self::OPT_TEST_MODE, '0') === '1'; }
     public static function test_user()  { return (int) get_option(self::OPT_TEST_USER, 0); }
