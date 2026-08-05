@@ -900,8 +900,15 @@ DLCSS;
      * the student's answers are already saved and a delivery problem is an
      * operator problem, not theirs.
      */
-    /** Segments that are actually offered an ebook. */
-    const EBOOK_SEGMENTS = array('finished', 'near');
+    /**
+     * Segments offered an ebook.
+     *
+     * Was finished+near only. Opened to every invited segment 2026-08-05 —
+     * the book is a thank-you for answering, not a reward for finishing, and
+     * the people who stopped are the ones whose answers we most need. The gate
+     * still exists so a response with no legitimate picker can't mint a grant.
+     */
+    const EBOOK_SEGMENTS = array('finished', 'near', 'stalled', 'not_started');
 
     /**
      * Which segment the student was actually SHOWN — the real one, unless a

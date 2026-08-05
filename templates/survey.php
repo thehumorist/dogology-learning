@@ -89,12 +89,11 @@ function dl_srv_nav($back, $next, $submit = false)
  * live sequence. Hard-coding them is how a "next" button ends up pointing at a
  * page that is hidden for this student.
  */
-// Panel 1 is the ebook picker, so it belongs ONLY to the segments that are
-// actually granted a book (finished / near — see Survey::EBOOK_SEGMENTS). It
-// used to be in both sequences, so a stalled student was shown the picker,
-// told "กดส่งแล้วเราจะส่งอีบุ๊กให้" and then refused by the server-side gate —
-// a promise the invite itself never made.
-$seq = $is_unf ? array(2, 3, 4, 5, 6, 8, 10) : array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+// Panel 1 is the ebook picker. Every invited segment is now granted a book
+// (Survey::EBOOK_SEGMENTS), so everyone sees it. Keep this list and that
+// constant in step: showing the picker to a segment the gate refuses is a
+// promise we then break, which is exactly what happened earlier today.
+$seq = $is_unf ? array(1, 2, 3, 4, 5, 6, 8, 10) : array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 $nav = function ($n) use ($seq) {
     $i = array_search($n, $seq, true);
     if ($i === false) return array('back' => 0, 'next' => 0, 'last' => false, 'skip' => true);
@@ -198,12 +197,7 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
       </script>
       <?php endif; ?>
     <?php else: ?>
-      <?php /* Only promise a book to someone who is actually getting one. */ ?>
-      <?php if ($ctx && !$ctx['is_unfinished']): ?>
-        <p>ขอบคุณที่สละเวลาตอบนะครับ<br>เราจะส่งอีบุ๊กให้ทาง LINE เร็ว ๆ นี้</p>
-      <?php else: ?>
-        <p>ขอบคุณที่สละเวลาตอบนะครับ<br>สิ่งที่คุณเล่ามาจะถูกใช้ปรับปรุงคอร์สจริง ๆ ครับ</p>
-      <?php endif; ?>
+      <p>ขอบคุณที่สละเวลาตอบนะครับ<br>เราจะส่งอีบุ๊กให้ทาง LINE เร็ว ๆ นี้</p>
     <?php endif; ?>
   </div>
 
@@ -530,9 +524,7 @@ for ($i = 1; $i <= 10; $i++) {
           <span class="sub">สิ่งที่คุณเล่ามาจะถูกอ่านจริง ๆ และจะถูกใช้ตัดสินใจว่าจะปรับอะไรก่อนครับ</span>
         </div>
         <?php endif; ?>
-        <p class="fine"><?php echo $is_unf
-          ? 'กดส่งคำตอบได้เลยครับ'
-          : 'กดส่งแล้วเราจะส่งอีบุ๊กให้ทาง LINE ครับ'; ?></p>
+        <p class="fine">กดส่งแล้วเราจะส่งอีบุ๊กให้ทาง LINE ครับ</p>
       </div>
       <?php $n = $nav(10); dl_srv_nav($n['back'], 0, true); ?>
     </section>
