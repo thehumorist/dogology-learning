@@ -36,9 +36,11 @@ if (!empty($_POST['dl_survey_nonce']) && wp_verify_nonce($_POST['dl_survey_nonce
         if (!$segments) {
             $notice = 'ยังไม่ได้เลือกกลุ่มผู้รับ';
         } else {
-            $r = Dogology_Learning_Survey_Blast::queue($segments, 'blast');
-            $notice = sprintf('เข้าคิวแล้ว %d คน — ข้าม %d (ตอบไปแล้ว/อยู่ในคิวแล้ว) — ไม่มี LINE %d คน',
-                $r['added'], $r['skipped'], $r['noline']);
+            $use_email = !empty($_POST['use_email']);
+            $r = Dogology_Learning_Survey_Blast::queue($segments, 'blast', $use_email);
+            $notice = sprintf(
+                'เข้าคิวแล้ว %d คน (ทางอีเมล %d) — ข้าม %d (ตอบไปแล้ว/อยู่ในคิวแล้ว) — ติดต่อไม่ได้เลย %d คน',
+                $r['added'], $r['emailed'], $r['skipped'], $r['noline']);
         }
     }
 
@@ -166,8 +168,12 @@ $fopts   = Dogology_Learning_Survey::options('friction');
           <?php endif; ?>
         </label>
       <?php endforeach; ?>
+      <label style="display:block;margin:12px 0 4px">
+        <input type="checkbox" name="use_email" value="1" checked>
+        ส่งอีเมลให้คนที่ไม่มี LINE (ข้อความเดียวกับ flex)
+      </label>
       <p style="color:#666">
-        รวมทั้งหมดที่ไม่มี LINE ID <strong><?php echo (int) $counts['no_line']; ?></strong> คน — ส่งไม่ได้ ต้องใช้อีเมลแทน<br>
+        รวมทั้งหมดที่ไม่มี LINE ID <strong><?php echo (int) $counts['no_line']; ?></strong> คน — ติ๊กด้านบนเพื่อส่งทางอีเมลแทน<br>
         กดซ้ำได้ปลอดภัย ระบบข้ามคนที่อยู่ในคิวหรือตอบไปแล้วเสมอ
       </p>
       <button class="button button-primary">เข้าคิวและเริ่มส่ง</button>

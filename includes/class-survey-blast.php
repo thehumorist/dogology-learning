@@ -38,6 +38,8 @@ class Dogology_Learning_Survey_Blast
             survey_key varchar(64) NOT NULL,
             user_id bigint(20) unsigned NOT NULL,
             line_uid varchar(64) DEFAULT NULL,
+            email varchar(191) DEFAULT NULL,
+            channel varchar(8) NOT NULL DEFAULT 'line',
             segment varchar(16) NOT NULL,
             source varchar(16) NOT NULL DEFAULT 'blast',
             lessons_done_at_send smallint(5) unsigned DEFAULT NULL,
@@ -101,6 +103,19 @@ class Dogology_Learning_Survey_Blast
         return $map;
     }
 
+    /** user_id => email, for the students LINE can't reach. One query. */
+    protected static function emails()
+    {
+        static $map = null;
+        if ($map !== null) return $map;
+        global $wpdb;
+        $map = array();
+        $rows = $wpdb->get_results(
+            "SELECT id, email FROM {$wpdb->prefix}dogology_users WHERE email <> ''", ARRAY_A);
+        foreach ($rows as $r) $map[(int) $r['id']] = $r['email'];
+        return $map;
+    }
+
     /** Everyone who has already answered, in ONE query. */
     protected static function responded_ids()
     {
@@ -138,30 +153,43 @@ class Dogology_Learning_Survey_Blast
      * person already queued or sent is silently skipped, so pressing the button
      * twice cannot double-send.
      */
-    public static function queue(array $segments, $source = 'blast')
+    public static function queue(array $segments, $source = 'blast', $use_email = true)
     {
         global $wpdb;
         $now = current_time('mysql');
-        $added = 0; $skipped = 0; $noline = 0;
+        $added = 0; $skipped = 0; $noline = 0; $emailed = 0;
         $lines     = self::line_uids();
+        $emails    = self::emails();
         $responded = self::responded_ids();
         foreach (self::audience() as $uid => $ctx) {
             if (!in_array($ctx['segment'], $segments, true)) continue;
-            $line = isset($lines[(int) $uid]) ? $lines[(int) $uid] : '';
-            if (!$line) { $noline++; continue; }
             if (isset($responded[(int) $uid])) { $skipped++; continue; }
+
+            // LINE first — it is where these students already talk to us. Email
+            // is the fallback for the ones LINE cannot reach at all, who were
+            // previously counted as unreachable and never asked.
+            $line  = isset($lines[(int) $uid]) ? $lines[(int) $uid] : '';
+            $email = isset($emails[(int) $uid]) ? $emails[(int) $uid] : '';
+            if ($line) {
+                $channel = 'line';
+            } elseif ($use_email && $email && is_email($email)) {
+                $channel = 'email'; $emailed++;
+            } else {
+                $noline++; continue;
+            }
+
             $ok = $wpdb->query($wpdb->prepare(
                 "INSERT IGNORE INTO " . self::table() . "
-                 (survey_key,user_id,line_uid,segment,source,lessons_done_at_send,
+                 (survey_key,user_id,line_uid,email,channel,segment,source,lessons_done_at_send,
                   furthest_position_at_send,status,created_at)
-                 VALUES (%s,%d,%s,%s,%s,%d,%d,'pending',%s)",
-                Dogology_Learning_Survey::SURVEY_KEY, $uid, $line, $ctx['segment'], $source,
-                $ctx['lessons_done'], $ctx['furthest_pos'], $now
+                 VALUES (%s,%d,%s,%s,%s,%s,%s,%d,%d,'pending',%s)",
+                Dogology_Learning_Survey::SURVEY_KEY, $uid, $line, $email, $channel,
+                $ctx['segment'], $source, $ctx['lessons_done'], $ctx['furthest_pos'], $now
             ));
             if ($ok) $added++; else $skipped++;
         }
         if ($added > 0) self::schedule_tick();
-        return compact('added', 'skipped', 'noline');
+        return compact('added', 'skipped', 'noline', 'emailed');
     }
 
     public static function schedule_tick()
@@ -236,12 +264,15 @@ class Dogology_Learning_Survey_Blast
      * finished in March, someone who finished an hour ago, and someone who
      * stopped at lesson three.
      */
-    public static function build_message($segment, $display_name = '', $user_id = 0, $preview = false)
+    /**
+     * The words, once. Flex and email both render from this, so the two can
+     * never drift — an email that argues differently from the LINE message is
+     * the same message twice with two different promises.
+     *
+     * @return array{hero,sub,title,body,cta,note,c1,c2}
+     */
+    public static function copy($segment)
     {
-        $url = self::survey_url($user_id, $preview
-            ? (($segment === 'stalled' || $segment === 'not_started') ? 'stalled' : 'finished')
-            : '');
-
         if ($segment === 'finished' || $segment === 'near') {
             $hero  = 'เนื้อหาใหม่กำลังมาเพิ่ม';
             $sub   = 'และเราอยากฟังความเห็นจากคุณก่อน';
@@ -279,12 +310,24 @@ class Dogology_Learning_Survey_Blast
             $body  = "เราสนใจตรงนี้จริง ๆ ครับ เพราะเวลามีคนหยุดกลางทาง ส่วนใหญ่แปลว่าคอร์สยังทำหน้าที่ได้ไม่ดีพอ "
                    . "ไม่ใช่ว่าคุณไม่พยายาม\n\n"
                    . "ตอนนี้เรากำลังจะปรับปรุงคอร์สครั้งใหญ่ และคนที่หยุดกลางทางคือคนที่บอกเราได้ตรงที่สุดว่าติดตรงไหน\n\n"
-                   . "ขอเวลาสัก 1 นาที เล่าให้ฟังหน่อยครับว่าอะไรทำให้หยุด เนื้อหาที่เราปรับจะฟรีสำหรับทุกคนที่ซื้อไปแล้ว";
+                   . "ขอเวลาสัก 1 นาที เล่าให้ฟังหน่อยครับว่าอะไรทำให้หยุดเรียนไป เพื่อเราจะได้ปรับปรุงได้ตรงจุดที่สุด "
+                   . "และหลังจากนี้เนื้อหาที่เราปรับจะฟรีสำหรับทุกคนที่ซื้อไปแล้วนะครับ";
             $cta   = 'เล่าให้เราฟังหน่อยครับ';
             $note  = 'ตอบได้เลย ไม่ต้องกลับไปเรียนต่อก่อน';
             // Was grey, which read as a downgraded, second-class message.
             $c1    = '#0F766E'; $c2 = '#0076BA';
         }
+
+        return compact('hero', 'sub', 'title', 'body', 'cta', 'note', 'c1', 'c2');
+    }
+
+    public static function build_message($segment, $display_name = '', $user_id = 0, $preview = false)
+    {
+        $url = self::survey_url($user_id, $preview
+            ? (($segment === 'stalled' || $segment === 'not_started') ? 'stalled' : 'finished')
+            : '');
+
+        extract(self::copy($segment));
 
         $bubble = array(
             'type' => 'bubble',
@@ -328,6 +371,79 @@ class Dogology_Learning_Survey_Blast
         return array('ok' => false, 'error' => 'MindMap sender unavailable (dogology-mindmap inactive?)');
     }
 
+    /**
+     * Email twin of the flex bubble, for the students with no LINE id — they
+     * were counted and skipped, which meant the one group we can't reach on
+     * LINE also never got asked.
+     *
+     * @return array{subject:string, html:string}
+     */
+    public static function build_email($segment, $user_id = 0, $preview = false)
+    {
+        $c   = self::copy($segment);
+        $url = self::survey_url($user_id, $preview
+            ? (($segment === 'stalled' || $segment === 'not_started') ? 'stalled' : 'finished')
+            : '');
+        // Always the plain page for email: a liff.line.me link opened from an
+        // inbox on desktop is a dead end.
+        if (strpos($url, 'liff.line.me') !== false) {
+            $path = '/101-survey/';
+            if ($user_id) {
+                $path = add_query_arg('t', Dogology_Learning_Survey::make_token($user_id), $path);
+                if ($preview) {
+                    $seg = ($segment === 'stalled' || $segment === 'not_started') ? 'stalled' : 'finished';
+                    $path = add_query_arg(array(
+                        'pv'  => $seg,
+                        'pvs' => Dogology_Learning_Survey::preview_sig($user_id, $seg),
+                    ), $path);
+                }
+            }
+            $url = home_url($path);
+        }
+
+        $paras = '';
+        foreach (preg_split("/\n\n+/", $c['body']) as $p) {
+            $paras .= '<p style="margin:0 0 16px;font-size:15px;line-height:1.85;color:#475569">'
+                    . nl2br(esc_html($p)) . '</p>';
+        }
+
+        $html = '<div style="background:#F1F5F9;padding:24px 0">'
+          . '<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;'
+          . 'font-family:\'Noto Sans Thai\',Tahoma,sans-serif">'
+          . '<div style="background:' . esc_attr($c['c1']) . ';padding:26px 24px;text-align:center">'
+          . '<div style="color:#fff;font-weight:700;font-size:19px;line-height:1.5">' . esc_html($c['hero']) . '</div>'
+          . '<div style="color:#fff;font-weight:700;font-size:19px;line-height:1.5">' . esc_html($c['sub']) . '</div>'
+          . '</div>'
+          . '<div style="padding:26px 24px">'
+          . '<p style="margin:0 0 14px;font-size:17px;font-weight:700;color:#0F172A">' . esc_html($c['title']) . '</p>'
+          . $paras
+          . '<p style="margin:26px 0 10px;text-align:center">'
+          . '<a href="' . esc_url($url) . '" style="display:inline-block;background:' . esc_attr($c['c2'])
+          . ';color:#fff;text-decoration:none;padding:14px 28px;border-radius:999px;font-weight:700;font-size:15px">'
+          . esc_html($c['cta']) . '</a></p>'
+          . '<p style="margin:0;text-align:center;font-size:12px;color:#94A3B8">' . esc_html($c['note']) . '</p>'
+          . '<p style="margin:22px 0 0;font-size:12px;color:#94A3B8;line-height:1.7">'
+          . 'ถ้าปุ่มกดไม่ได้ เปิดลิงก์นี้ได้เลยครับ<br>'
+          . '<a href="' . esc_url($url) . '" style="color:#0F766E">' . esc_html($url) . '</a></p>'
+          . '</div>'
+          . '<div style="padding:16px 24px;background:#F8FAFC;text-align:center;font-size:11px;color:#94A3B8">'
+          . 'Dogology · โรงเรียนฝึกสุนัข</div>'
+          . '</div></div>';
+
+        return array('subject' => $c['title'], 'html' => $html);
+    }
+
+    /** @return array{ok:bool,error?:string} */
+    public static function send_email($to, $segment, $user_id = 0, $preview = false)
+    {
+        $to = sanitize_email((string) $to);
+        if (!$to || !is_email($to)) return array('ok' => false, 'error' => 'invalid email');
+        $m  = self::build_email($segment, $user_id, $preview);
+        $ok = wp_mail($to, $m['subject'], $m['html'],
+            array('Content-Type: text/html; charset=UTF-8'));
+        return $ok ? array('ok' => true) : array('ok' => false, 'error' => 'wp_mail returned false');
+    }
+
     public static function retry_key($row_id)
     {
         return substr(md5('dl-survey-' . self::table() . '-' . (int) $row_id), 0, 32);
@@ -350,8 +466,12 @@ class Dogology_Learning_Survey_Blast
                 if (!$claimed) continue;
 
                 $seg = ($r->source === 'auto') ? 'auto' : $r->segment;
-                $msg = self::build_message($seg, '', (int) $r->user_id);
-                $res = self::push($r->line_uid, $msg, self::retry_key($r->id));
+                if (($r->channel ?? 'line') === 'email') {
+                    $res = self::send_email($r->email, $seg, (int) $r->user_id);
+                } else {
+                    $res = self::push($r->line_uid,
+                        self::build_message($seg, '', (int) $r->user_id), self::retry_key($r->id));
+                }
 
                 if (!empty($res['ok'])) {
                     $wpdb->update($t, array('status' => 'sent', 'sent_at' => current_time('mysql'), 'error' => null),
