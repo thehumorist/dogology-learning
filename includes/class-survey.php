@@ -136,7 +136,7 @@ class Dogology_Learning_Survey
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;font-family:'Noto Sans Thai Looped','TH Sarabun New','TH SarabunPSK',Thonburi,'Noto Sans Thai',sans-serif;background:#fff;color:var(--ink);
-  line-height:1.75;font-size:15px;padding-bottom:0}
+  line-height:1.75;font-size:16.5px;padding-bottom:0}
 h1,.step h2,.book h3,.q .lab,.scale .num{font-family:var(--head)}
 
 /* every control input is hidden; its <label> is the visible row */
@@ -154,12 +154,12 @@ h1,.step h2,.book h3,.q .lab,.scale .num{font-family:var(--head)}
 .prog .bar{height:3px;background:var(--line)}
 .prog .fill{height:100%;width:16.7%;background:var(--grad);transition:width .25s}
 .prog .row{display:flex;justify-content:space-between;align-items:center;gap:12px;
-  padding:11px var(--pad);font-size:12.5px;color:var(--muted)}
+  padding:11px var(--pad);font-size:13.5px;color:var(--muted)}
 
 .nav{position:sticky;bottom:0;z-index:10;display:flex;gap:10px;margin-top:18px;
   background:#fff;border-top:1px solid var(--line);
   padding:12px var(--pad) calc(14px + env(safe-area-inset-bottom))}
-.tapgo{margin:16px var(--pad) 0;text-align:center;font-size:12px;color:var(--muted)}
+.tapgo{margin:16px var(--pad) 0;text-align:center;font-size:13px;color:var(--muted)}
 .next{flex:1;display:block;text-align:center;background:var(--grad);color:#fff;border-radius:12px;
   padding:15px;font-size:16px;font-weight:500;cursor:pointer;line-height:1.4}
 .back{flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);
@@ -170,7 +170,7 @@ h1,.step h2,.book h3,.q .lab,.scale .num{font-family:var(--head)}
 .eyebrow{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);font-weight:600;margin:0 0 8px}
 h1{margin:0 0 10px;font-size:23px;font-weight:600;line-height:1.45}
 h1 .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-.lede{margin:0;color:var(--body);font-size:14.5px}
+.lede{margin:0;color:var(--body);font-size:16px}
 .who-strip{display:flex;align-items:center;gap:11px;background:#fff;border:1px solid var(--line);
   border-radius:12px;padding:11px 13px;margin-top:16px}
 .who-strip .av{width:38px;height:38px;border-radius:50%;background:var(--grad);flex:none;
@@ -184,17 +184,17 @@ h1 .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;c
 /* ---- sections ---- */
 .sec{padding:26px var(--pad)}
 .step{display:flex;align-items:baseline;gap:9px;margin:0 0 5px}
-.step .n{font-size:11.5px;font-weight:600;color:var(--teal);white-space:nowrap}
-.step h2{margin:0;font-size:18px;font-weight:600}
-.hint{margin:0 0 18px;color:var(--muted);font-size:13px}
+.step .n{font-size:12.5px;font-weight:600;color:var(--teal);white-space:nowrap}
+.step h2{margin:0;font-size:20px;font-weight:600}
+.hint{margin:0 0 18px;color:var(--muted);font-size:14.5px}
 .q{margin-bottom:28px;display:flex;flex-direction:column}
-.q .lab{font-size:15px;font-weight:500;margin-bottom:4px;line-height:1.55}
-.q .sub{font-size:12.5px;color:var(--muted);margin-bottom:11px;line-height:1.6}
-.q .sub2{font-size:15px;font-weight:500;margin:18px 0 2px;font-family:var(--head)}
+.q .lab{font-size:17px;font-weight:500;margin-bottom:4px;line-height:1.55}
+.q .sub{font-size:14px;color:var(--muted);margin-bottom:11px;line-height:1.6}
+.q .sub2{font-size:16.5px;font-weight:500;margin:18px 0 2px;font-family:var(--head)}
 
 /* ---- option rows: input + label, styled via :checked + label ---- */
 .opt{display:flex;align-items:flex-start;gap:11px;border:1px solid var(--line);border-radius:10px;
-  padding:13px 14px;min-height:var(--tap);font-size:14px;color:var(--body);cursor:pointer;
+  padding:13px 14px;min-height:var(--tap);font-size:15.5px;color:var(--body);cursor:pointer;
   margin-bottom:8px;background:#fff}
 .opt i{flex:none;width:19px;height:19px;border:1.5px solid #CBD5E1;border-radius:5px;
   margin-top:3px;display:block;position:relative}
@@ -205,7 +205,7 @@ input[type=radio] + .opt i{border-radius:50%}
   border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
 
 .empty{margin:0;padding:13px 14px;border:1px dashed var(--rule);border-radius:10px;
-  color:var(--muted);font-size:13px;text-align:center}
+  color:var(--muted);font-size:14px;text-align:center}
 
 textarea,input[type=text]{width:100%;border:1px solid var(--rule);border-radius:10px;padding:13px 14px;
   font-family:inherit;font-size:16px;color:var(--ink);resize:vertical;line-height:1.7;background:#fff}
@@ -227,10 +227,10 @@ textarea:focus,input[type=text]:focus{outline:none;border-color:var(--teal)}
   box-shadow:0 2px 8px rgba(15,23,42,.14);aspect-ratio:3/4.2}
 .cover img{width:100%;height:100%;object-fit:cover;display:block}
 .bookmain{flex:1;min-width:0}
-.book h3{margin:0 0 2px;font-size:16px;font-weight:600;padding-right:34px}
+.book h3{margin:0 0 2px;font-size:17.5px;font-weight:600;padding-right:34px}
 .book .en{margin:0 0 9px;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
-.book p{margin:0 0 11px;font-size:13.5px;color:var(--body);line-height:1.65}
-.book .who{margin:0;font-size:12.5px;color:var(--teal-deep);background:rgba(0,171,142,.08);
+.book p{margin:0 0 11px;font-size:15px;color:var(--body);line-height:1.65}
+.book .who{margin:0;font-size:13.5px;color:var(--teal-deep);background:rgba(0,171,142,.08);
   border-radius:8px;padding:9px 11px;line-height:1.6}
 .ownlbl{position:absolute;top:14px;right:15px;font-size:10.5px;color:var(--muted);
   background:#F1F5F9;padding:2px 9px;border-radius:12px}
@@ -241,22 +241,22 @@ textarea:focus,input[type=text]:focus{outline:none;border-color:var(--teal)}
   padding:11px 3px;cursor:pointer;background:#fff}
 .ci:checked + .sc{border-color:var(--teal);background:rgba(0,171,142,.07)}
 .scale .num{display:block;font-size:18px;font-weight:600;color:var(--ink)}
-.scale .cap{display:block;font-size:10px;color:var(--muted);line-height:1.35}
+.scale .cap{display:block;font-size:11.5px;color:var(--muted);line-height:1.35}
 .starbox{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:20px 16px}
 .stars{display:flex;flex-direction:row-reverse;justify-content:center}
 .stars label{color:#E2E8F0;font-size:34px;line-height:1;padding:5px;cursor:pointer;min-width:var(--tap);text-align:center}
 .stars .ci:checked ~ label{color:#F59E0B}
 .stars label:hover,.stars label:hover ~ label{color:#FBBF24}
-.starcap{text-align:center;font-size:13px;color:var(--muted);margin:10px 0 0}
+.starcap{text-align:center;font-size:14px;color:var(--muted);margin:10px 0 0}
 .note{background:#F0F9FF;border-left:3px solid var(--blue);border-radius:0 9px 9px 0;
-  padding:14px 16px;margin:0 0 14px;font-size:13.5px;color:var(--body);line-height:1.75}
+  padding:14px 16px;margin:0 0 14px;font-size:15px;color:var(--body);line-height:1.75}
 .perm{background:var(--bg);border:1px solid var(--line);border-radius:11px;padding:15px}
 .upload{display:flex;align-items:center;gap:13px;border:1.5px dashed var(--rule);border-radius:11px;
   padding:14px;cursor:pointer;background:#fff;margin-top:4px}
 .upload .ic{font-size:22px;flex:none}
-.upload .ut{font-size:12.5px;color:var(--muted);line-height:1.55}
-.upload .ut b{color:var(--ink);font-weight:500;font-size:13.5px}
-.fine{margin:14px 0 0;text-align:center;font-size:12px;color:var(--muted)}
+.upload .ut{font-size:13.5px;color:var(--muted);line-height:1.55}
+.upload .ut b{color:var(--ink);font-weight:500;font-size:14.5px}
+.fine{margin:14px 0 0;text-align:center;font-size:13.5px;color:var(--muted)}
 
 /* ---- LINE panel ---- */
 
@@ -274,37 +274,37 @@ textarea:focus,input[type=text]:focus{outline:none;border-color:var(--teal)}
 .sec{padding:18px var(--pad) 4px}
 .hero{padding:18px var(--pad) 16px}
 h1{font-size:20px;line-height:1.4;margin:0 0 8px}
-.lede{font-size:13.5px}
+.lede{font-size:15.5px}
 .who-strip{padding:9px 11px;margin-top:12px}
 .who-strip .av{width:32px;height:32px;font-size:13px}
-.note{padding:11px 13px;margin:0 0 11px;font-size:12.5px;line-height:1.65}
-.hint{margin:0 0 12px;font-size:12.5px}
+.note{padding:11px 13px;margin:0 0 11px;font-size:14px;line-height:1.65}
+.hint{margin:0 0 12px;font-size:14px}
 .q{margin-bottom:0}
-.q .lab{font-size:16px;line-height:1.45;margin-bottom:3px}
-.q .sub{font-size:12px;margin-bottom:9px}
-.q .sub2{font-size:15px;margin:14px 0 2px}
-.opt{padding:9px 12px;min-height:0;font-size:13.5px;margin-bottom:6px;gap:9px;line-height:1.45}
+.q .lab{font-size:17.5px;line-height:1.45;margin-bottom:3px}
+.q .sub{font-size:13.5px;margin-bottom:9px}
+.q .sub2{font-size:16.5px;margin:14px 0 2px}
+.opt{padding:9px 12px;min-height:0;font-size:15px;margin-bottom:6px;gap:9px;line-height:1.45}
 .opt i{width:17px;height:17px;margin-top:2px}
 .ci:checked + .opt i:after{left:4.5px;top:1px;width:4px;height:9px}
 textarea{font-size:16px;padding:11px 13px;line-height:1.55}
 .books{gap:8px}
 .book{padding:11px 12px}
 .cover{width:58px;aspect-ratio:3/4.2}
-.book h3{font-size:14.5px}
-.book .en{margin:0 0 6px;font-size:9.5px}
-.book p{font-size:12.5px;margin:0;line-height:1.5}
+.book h3{font-size:16px}
+.book .en{margin:0 0 6px;font-size:10.5px}
+.book p{font-size:14px;margin:0;line-height:1.5}
 .book .who{display:none}
 .bookrow{gap:11px}
 .scale label{padding:14px 3px}
-.scale .num{font-size:20px}
+.scale .num{font-size:22px}
 .starbox{padding:14px}
 .stars label{font-size:38px;padding:4px}
 .perm{padding:12px}
 .upload{padding:11px}
 .prog .bar{height:4px}
 
-.next{padding:13px;font-size:15px}
-.back{padding:0 16px;font-size:14px}
+.next{padding:13px;font-size:16px}
+.back{padding:0 16px;font-size:15px}
 @media (min-height:760px){
   .sec{padding:24px var(--pad) 6px}
   .opt{padding:11px 13px;margin-bottom:7px}
@@ -339,7 +339,7 @@ textarea{font-size:16px;padding:11px 13px;line-height:1.55}
   border-radius:12px;padding:14px 13px;margin-top:16px;display:flex;flex-direction:column}
 .bestwrap .sub2,.subq .sub2{color:var(--teal-deep)}
 .subq + .subq,.bestwrap + .subq{margin-top:10px}
-.bestwrap .sub2,.subq .sub2{margin:0 0 2px;font-size:15px}
+.bestwrap .sub2,.subq .sub2{margin:0 0 2px;font-size:16.5px}
 .bestwrap .sub,.subq .sub{margin-bottom:9px}
 .bestwrap .opt,.subq .opt{background:#fff}
 .bestwrap .empty{background:#fff}
@@ -385,8 +385,8 @@ textarea,input[type=text]{background:#fff}
 #w10:checked ~ .shell .fill{width:100%}
 .bopt{display:none}
 .gate{max-width:420px;margin:0 auto;padding:56px 24px;text-align:center}
-.gate h1{font-size:20px;margin:0 0 12px}
-.gate p{color:var(--body);font-size:14.5px;line-height:1.8}
+.gate h1{font-size:22px;margin:0 0 12px}
+.gate p{color:var(--body);font-size:16px;line-height:1.8}
 .gatebtn{display:inline-block;margin-top:20px;padding:14px 26px;border-radius:12px;
   background:var(--grad);color:#fff;text-decoration:none;font-weight:500}
 .sending{opacity:.55;pointer-events:none}
@@ -417,7 +417,7 @@ textarea,input[type=text]{background:#fff}
    checkbox, which reads as "tick to agree", not "tap to add a picture". */
 .photopick{display:flex;align-items:center;gap:11px;min-height:var(--tap);
   padding:10px 12px;margin-top:6px;background:#fff;border:1px dashed var(--rule);
-  border-radius:12px;cursor:pointer;font-size:14px;color:var(--body)}
+  border-radius:12px;cursor:pointer;font-size:15px;color:var(--body)}
 .photopick .ph{display:flex;align-items:center;justify-content:center;
   width:38px;height:38px;flex:none;border-radius:10px;
   background:rgba(0,171,142,.08);color:var(--teal-deep)}
