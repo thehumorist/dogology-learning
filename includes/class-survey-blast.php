@@ -149,9 +149,22 @@ class Dogology_Learning_Survey_Blast
         return (int) $wpdb->get_var("SELECT COUNT(*) FROM " . self::table() . " WHERE status='failed'");
     }
 
-    public static function survey_url()
+    /**
+     * LIFF URL when a LIFF id is configured, plain URL otherwise.
+     *
+     * This was the plain URL, which is why tapping the button opened the LINE
+     * in-app browser WITHOUT a LIFF context — so the page had no LINE identity
+     * and every recipient landed on the "ยังไม่พบข้อมูลผู้เรียน" gate. LINE only
+     * establishes that context for liff.line.me links. Mirrors how MindMap
+     * builds its ebook CTA.
+     */
+    public static function survey_url($user_id = 0)
     {
-        return home_url('/101-survey/');
+        $url = home_url('/101-survey/');
+        if ($user_id) {
+            $url = add_query_arg('t', Dogology_Learning_Survey::make_token($user_id), $url);
+        }
+        return $url;
     }
 
     /**
@@ -159,9 +172,9 @@ class Dogology_Learning_Survey_Blast
      * finished in March, someone who finished an hour ago, and someone who
      * stopped at lesson three.
      */
-    public static function build_message($segment, $display_name = '')
+    public static function build_message($segment, $display_name = '', $user_id = 0)
     {
-        $url = self::survey_url();
+        $url = self::survey_url($user_id);
 
         if ($segment === 'finished' || $segment === 'near') {
             $hero  = 'เนื้อหาใหม่กำลังมาเพิ่ม';
@@ -261,7 +274,7 @@ class Dogology_Learning_Survey_Blast
                 if (!$claimed) continue;
 
                 $seg = ($r->source === 'auto') ? 'auto' : $r->segment;
-                $msg = self::build_message($seg);
+                $msg = self::build_message($seg, '', (int) $r->user_id);
                 $res = self::push($r->line_uid, $msg, self::retry_key($r->id));
 
                 if (!empty($res['ok'])) {
@@ -320,6 +333,10 @@ class Dogology_Learning_Survey_Blast
         $line_uid = trim((string) $line_uid);
         if ($line_uid === '') return array('ok' => false, 'error' => 'no line_uid');
         // no retry key: a sample must be re-sendable while iterating on copy
-        return self::push($line_uid, self::build_message($segment), '');
+        global $wpdb;
+        // resolve the recipient so the sample link carries a working token too
+        $uid = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}dogology_users WHERE line_uid = %s LIMIT 1", $line_uid));
+        return self::push($line_uid, self::build_message($segment, '', $uid), '');
     }
 }
