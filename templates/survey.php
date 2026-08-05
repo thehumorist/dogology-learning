@@ -244,6 +244,13 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
 <form id="survey-form" method="post" action="<?php echo esc_url(home_url('/101-survey/')); ?>">
 <?php wp_nonce_field('dl_survey_submit', 'dl_survey_nonce'); ?>
 <?php if ($dl_token): ?><input type="hidden" name="t" value="<?php echo esc_attr($dl_token); ?>"><?php endif; ?>
+<?php /* Carry the SIGNED preview override into the submit, so the server can tell
+         "this person was legitimately shown the ebook picker" from a hand-made
+         POST. Unsigned or altered values are ignored server-side. */ ?>
+<?php if (!empty($_GET['pv']) && !empty($_GET['pvs'])): ?>
+  <input type="hidden" name="pv" value="<?php echo esc_attr(sanitize_key(wp_unslash($_GET['pv']))); ?>">
+  <input type="hidden" name="pvs" value="<?php echo esc_attr(sanitize_text_field(wp_unslash($_GET['pvs']))); ?>">
+<?php endif; ?>
 <?php
 /**
  * The wizard radios must be SIBLINGS OF .shell — the page rules are

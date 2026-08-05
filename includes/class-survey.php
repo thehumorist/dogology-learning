@@ -835,7 +835,7 @@ DLCSS;
                 ));
             }
         }
-        self::after_store($rid, (int) $user_id);
+        self::after_store($rid, (int) $user_id, self::effective_segment($payload, $user_id, $ctx['segment']));
         return $rid;
     }
 
@@ -866,7 +866,23 @@ DLCSS;
      * the student's answers are already saved and a delivery problem is an
      * operator problem, not theirs.
      */
-    protected static function after_store($response_id, $user_id)
+    /** Segments that are actually offered an ebook. */
+    const EBOOK_SEGMENTS = array('finished', 'near');
+
+    /**
+     * Which segment the student was actually SHOWN — the real one, unless a
+     * valid signed preview override was in play. The stored row always keeps
+     * the real segment (the data must stay honest); this only decides whether
+     * the ebook picker they saw was legitimate.
+     */
+    protected static function effective_segment(array $payload, $user_id, $real)
+    {
+        if (empty($payload['pv']) || empty($payload['pvs'])) return $real;
+        $pv = sanitize_key((string) $payload['pv']);
+        return self::verify_preview((int) $user_id, $pv, (string) $payload['pvs']) ? $pv : $real;
+    }
+
+    protected static function after_store($response_id, $user_id, $segment = '')
     {
         global $wpdb;
 
@@ -876,7 +892,7 @@ DLCSS;
             current_time('mysql'), self::SURVEY_KEY, (int) $user_id
         ));
 
-        $grant = self::grant_ebook((int) $response_id);
+        $grant = self::grant_ebook((int) $response_id, $segment);
         if (is_wp_error($grant)) {
             // Admin still shows "ยังไม่ได้ส่ง" for this row; the log says why.
             error_log('[dogology-survey] ebook grant skipped for response '
@@ -900,7 +916,7 @@ DLCSS;
      *
      * @return int|WP_Error Order id, or WP_Error describing why nothing was granted.
      */
-    public static function grant_ebook($response_id)
+    public static function grant_ebook($response_id, $segment = '')
     {
         global $wpdb;
 
@@ -910,6 +926,15 @@ DLCSS;
         if (!$r)                  return new WP_Error('no_response', 'ไม่พบคำตอบ');
         if ($r->ebook_granted_at) return new WP_Error('already_granted', 'ส่งไปแล้ว');
         if (!$r->ebook_choice)    return new WP_Error('no_choice', 'ไม่ได้เลือกเล่ม');
+
+        // The ebook is offered to finishers and near-finishers only. Until now
+        // the grant fired on the mere presence of ebook_choice, so a hand-made
+        // POST from any enrolled student earned a free book. $segment is what
+        // the page legitimately showed them, not a client-supplied value.
+        $segment = $segment ?: $r->segment;
+        if (!in_array($segment, self::EBOOK_SEGMENTS, true)) {
+            return new WP_Error('not_eligible', 'กลุ่มนี้ไม่ได้รับอีบุ๊ก (' . $segment . ')');
+        }
 
         $map = self::ebook_cohort_map();
         if (empty($map[$r->ebook_choice])) {
