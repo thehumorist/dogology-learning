@@ -250,7 +250,17 @@ $fopts   = Dogology_Learning_Survey::options('friction');
               <div style="font-size:12px;color:#666;margin-top:4px"><?php echo esc_html($r->comments); ?></div>
             <?php endif; ?>
           </td>
-          <td><?php echo $r->consent_testimonial ? '✓ ' . esc_html($r->dog_name) : '—'; ?></td>
+          <td>
+            <?php echo $r->consent_testimonial ? '✓ ' . esc_html($r->dog_name) : '—'; ?>
+            <?php if (!empty($r->photo_attachment_id)):
+              $src = wp_get_attachment_image_url((int) $r->photo_attachment_id, 'thumbnail'); ?>
+              <?php if ($src): ?>
+                <a href="<?php echo esc_url(wp_get_attachment_url((int) $r->photo_attachment_id)); ?>" target="_blank" rel="noopener">
+                  <img src="<?php echo esc_url($src); ?>" alt="" style="display:block;width:56px;height:56px;object-fit:cover;border-radius:8px;margin-top:6px">
+                </a>
+              <?php endif; ?>
+            <?php endif; ?>
+          </td>
         </tr>
       <?php endforeach; endif; ?>
       </tbody>

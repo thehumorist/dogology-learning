@@ -33,6 +33,17 @@ if (!$student && !empty($_GET['t'])) {
 }
 $ctx     = $student ? Dogology_Learning_Survey::context_for((int) $student->id) : null;
 
+// Signed preview override (sample sends only) — makes the page render as the
+// segment the sample is advertising instead of the recipient's real progress.
+// Rendering only: store() still records the real segment.
+if ($ctx && !empty($_GET['pv']) && !empty($_GET['pvs'])) {
+    $pv = sanitize_key(wp_unslash($_GET['pv']));
+    if (Dogology_Learning_Survey::verify_preview((int) $student->id, $pv, sanitize_text_field(wp_unslash($_GET['pvs'])))) {
+        $ctx['segment']       = $pv;
+        $ctx['is_unfinished'] = ($pv === 'stalled' || $pv === 'not_started');
+    }
+}
+
 $display_name = $student && !empty($student->display_name) ? $student->display_name : '';
 $initial      = $display_name !== '' ? mb_substr($display_name, 0, 1, 'UTF-8') : '?';
 $topics       = $ctx ? Dogology_Learning_Survey::topics_for($ctx) : array();
@@ -175,7 +186,8 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
   <?php endif; ?>
 
 <?php else: ?>
-<form id="survey-form" method="post">
+<form id="survey-form" method="post" action="<?php echo esc_url(home_url('/101-survey/')); ?>">
+<?php wp_nonce_field('dl_survey_submit', 'dl_survey_nonce'); ?>
 <?php
 /**
  * The wizard radios must be SIBLINGS OF .shell — the page rules are
@@ -395,6 +407,13 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
               <span class="sub">น้องหมาชื่ออะไร</span>
               <input type="text" name="dog_name" placeholder="เช่น ข้าวปั้น">
             </div>
+            <div style="margin-top:12px">
+              <span class="sub">รูปน้อง (ถ้ามี)</span>
+              <input class="ci" type="file" id="dogphoto" name="dog_photo" accept="image/*">
+              <label class="opt" for="dogphoto" style="margin:6px 0 0"><i></i><span id="dogphoto-label">เลือกรูปน้องหมา</span></label>
+              <img id="dogphoto-preview" alt="" style="display:none;width:96px;height:96px;object-fit:cover;border-radius:12px;margin-top:10px">
+              <input type="hidden" name="photo_attachment_id" id="photo_attachment_id" value="">
+            </div>
           </div>
         </div>
         <p class="fine">กดส่งแล้วเราจะส่งอีบุ๊กให้ทาง LINE ครับ</p>
@@ -410,6 +429,30 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
 (function () {
   var form = document.getElementById('survey-form');
   if (!form) return;
+
+  // The photo can't ride the JSON submit, so it uploads the moment it's picked
+  // and only its attachment id travels with the answers.
+  var photo = document.getElementById('dogphoto');
+  if (photo) {
+    photo.addEventListener('change', function () {
+      var f = photo.files && photo.files[0];
+      if (!f) return;
+      var lab = document.getElementById('dogphoto-label');
+      lab.textContent = 'กำลังอัปโหลด...';
+      var fd = new FormData(); fd.append('file', f);
+      fetch('<?php echo esc_url_raw(rest_url('dogology-learning/v1/survey-photo')); ?>', {
+        method: 'POST', credentials: 'same-origin', body: fd
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j && j.ok) {
+          document.getElementById('photo_attachment_id').value = j.attachment_id;
+          var pv = document.getElementById('dogphoto-preview');
+          pv.src = j.url; pv.style.display = 'block';
+          lab.textContent = 'เปลี่ยนรูป';
+        } else { lab.textContent = 'อัปโหลดไม่สำเร็จ แตะเพื่อลองใหม่'; }
+      }).catch(function () { lab.textContent = 'อัปโหลดไม่สำเร็จ แตะเพื่อลองใหม่'; });
+    });
+  }
+
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     form.classList.add('sending');

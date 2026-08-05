@@ -170,11 +170,20 @@ class Dogology_Learning_Survey_Blast
      * The signed token rides along in `target`, so identity still works even if
      * the user's LINE is set to open links externally and LIFF never engages.
      */
-    public static function survey_url($user_id = 0)
+    public static function survey_url($user_id = 0, $preview_segment = '')
     {
         $path = '/101-survey/';
         if ($user_id) {
             $path = add_query_arg('t', Dogology_Learning_Survey::make_token($user_id), $path);
+        }
+        // Samples only: render as the advertised segment instead of the
+        // recipient's own progress — which is why every sample opened the
+        // non-finisher page. Signed, so it can't be added by hand.
+        if ($user_id && $preview_segment) {
+            $path = add_query_arg(array(
+                'pv'  => $preview_segment,
+                'pvs' => Dogology_Learning_Survey::preview_sig($user_id, $preview_segment),
+            ), $path);
         }
         $liff = trim((string) get_option('dogology_commerce_liff_id', ''));
         if ($liff !== '') {
@@ -189,9 +198,11 @@ class Dogology_Learning_Survey_Blast
      * finished in March, someone who finished an hour ago, and someone who
      * stopped at lesson three.
      */
-    public static function build_message($segment, $display_name = '', $user_id = 0)
+    public static function build_message($segment, $display_name = '', $user_id = 0, $preview = false)
     {
-        $url = self::survey_url($user_id);
+        $url = self::survey_url($user_id, $preview
+            ? (($segment === 'stalled' || $segment === 'not_started') ? 'stalled' : 'finished')
+            : '');
 
         if ($segment === 'finished' || $segment === 'near') {
             $hero  = 'เนื้อหาใหม่กำลังมาเพิ่ม';
@@ -358,6 +369,6 @@ class Dogology_Learning_Survey_Blast
         // resolve the recipient so the sample link carries a working token too
         $uid = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT id FROM {$wpdb->prefix}dogology_users WHERE line_uid = %s LIMIT 1", $line_uid));
-        return self::push($line_uid, self::build_message($segment, '', $uid), '');
+        return self::push($line_uid, self::build_message($segment, '', $uid, true), '');
     }
 }

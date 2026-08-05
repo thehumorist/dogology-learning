@@ -443,6 +443,28 @@ DLCSS;
         return $uid . '.' . substr(hash_hmac('sha256', 'survey|' . $uid, DOGOLOGY_AUTH_SALT), 0, 24);
     }
 
+    /**
+     * Signed segment override for sample sends.
+     *
+     * The page shape is derived from the recipient's REAL progress, so all
+     * three sample variants rendered the non-finisher page when sent to an
+     * operator who has not finished the course — correct behaviour, useless
+     * for previewing. This lets a sample link say "render as if finished".
+     * Signed so it cannot be self-issued: the ebook path is behind it.
+     * Affects RENDERING ONLY — a stored response always records the real
+     * segment from context_for().
+     */
+    public static function preview_sig($user_id, $segment)
+    {
+        return substr(hash_hmac('sha256', 'survey-preview|' . (int) $user_id . '|' . $segment,
+            DOGOLOGY_AUTH_SALT), 0, 16);
+    }
+    public static function verify_preview($user_id, $segment, $sig)
+    {
+        if (!$user_id || !$segment || !$sig) return false;
+        return hash_equals(self::preview_sig($user_id, $segment), (string) $sig);
+    }
+
     public static function verify_token($token)
     {
         $parts = explode('.', (string) $token);
@@ -654,6 +676,15 @@ DLCSS;
     }
 
     /** Persist one submission. Returns response id, or WP_Error. */
+    /** @return int|null Attachment id if this student uploaded it, else null. */
+    protected static function own_attachment(array $payload, $user_id)
+    {
+        $id = isset($payload['photo_attachment_id']) ? (int) $payload['photo_attachment_id'] : 0;
+        if ($id <= 0) return null;
+        $owner = (int) get_post_meta($id, '_dl_survey_student', true);
+        return ($owner === (int) $user_id) ? $id : null;
+    }
+
     public static function store($user_id, array $payload)
     {
         global $wpdb;
@@ -704,6 +735,9 @@ DLCSS;
             'ebook_choice'            => isset($payload['ebook_choice']) ? sanitize_key($payload['ebook_choice']) : null,
             'consent_testimonial'     => !empty($payload['consent_testimonial']) ? 1 : 0,
             'dog_name'                => isset($payload['dog_name']) ? sanitize_text_field((string) $payload['dog_name']) : null,
+            // Only honour an attachment this same student uploaded — the id is
+            // client-supplied, and without the check any media id would attach.
+            'photo_attachment_id'     => self::own_attachment($payload, $user_id),
             'raw_json'                => wp_json_encode($payload, JSON_UNESCAPED_UNICODE),
             'submitted_at'            => $now,
         ));
@@ -732,7 +766,151 @@ DLCSS;
                 ));
             }
         }
+        self::after_store($rid, (int) $user_id);
         return $rid;
+    }
+
+    /* ------------------------------------------------------------------
+     * Ebook grant
+     * ---------------------------------------------------------------- */
+
+    /**
+     * ebook_choice slug -> commerce cohort id. The cohorts are the same ebook
+     * cohorts the MindMap funnel sells (product "MindMap Ebooks"); the product
+     * id is resolved from the cohort row at runtime so it is never duplicated
+     * here. Filterable so a cohort can be re-pointed without a deploy.
+     */
+    public static function ebook_cohort_map()
+    {
+        return apply_filters('dogology_survey_ebook_cohorts', array(
+            'watchdog' => 10,
+            'hothead'  => 11,
+            'rocket'   => 12,
+            'shadow'   => 14,
+        ));
+    }
+
+    /**
+     * Everything that must happen once a response is safely on disk: stamp the
+     * invite ledger so a chase can tell responders from non-responders, then
+     * deliver the promised ebook. Deliberately never fails the submission —
+     * the student's answers are already saved and a delivery problem is an
+     * operator problem, not theirs.
+     */
+    protected static function after_store($response_id, $user_id)
+    {
+        global $wpdb;
+
+        $wpdb->query($wpdb->prepare(
+            "UPDATE {$wpdb->prefix}dogology_survey_invites SET responded_at = %s
+             WHERE survey_key = %s AND user_id = %d AND responded_at IS NULL",
+            current_time('mysql'), self::SURVEY_KEY, (int) $user_id
+        ));
+
+        $grant = self::grant_ebook((int) $response_id);
+        if (is_wp_error($grant)) {
+            // Admin still shows "ยังไม่ได้ส่ง" for this row; the log says why.
+            error_log('[dogology-survey] ebook grant skipped for response '
+                . (int) $response_id . ': ' . $grant->get_error_code()
+                . ' — ' . $grant->get_error_message());
+        }
+    }
+
+    /**
+     * Create the ฿0 commerce order that carries the ebook entitlement and push
+     * the same LINE + email delivery a paid ebook order gets.
+     *
+     * Deliberately NOT routed through create_order()/auto_confirm_payment():
+     * those fire Meta CAPI Purchase and GA4 purchase events, and a giveaway is
+     * not a sale. The order is tagged meta.survey_grant so it can be filtered
+     * out of revenue, and final_amount is 0 so any SUM() already reads right.
+     *
+     * Idempotent on two levels: ebook_granted_at short-circuits a repeat call,
+     * and the deterministic order_number ("SG-<response_id>") hits the UNIQUE
+     * key if two requests race, so a retry can never mint a second order.
+     *
+     * @return int|WP_Error Order id, or WP_Error describing why nothing was granted.
+     */
+    public static function grant_ebook($response_id)
+    {
+        global $wpdb;
+
+        $r = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM " . self::responses_table() . " WHERE id = %d", (int) $response_id
+        ));
+        if (!$r)                  return new WP_Error('no_response', 'ไม่พบคำตอบ');
+        if ($r->ebook_granted_at) return new WP_Error('already_granted', 'ส่งไปแล้ว');
+        if (!$r->ebook_choice)    return new WP_Error('no_choice', 'ไม่ได้เลือกเล่ม');
+
+        $map = self::ebook_cohort_map();
+        if (empty($map[$r->ebook_choice])) {
+            return new WP_Error('unmapped', 'ยังไม่ได้ผูกเล่มนี้กับรุ่นในระบบขาย');
+        }
+        $cohort_id = (int) $map[$r->ebook_choice];
+
+        $cohort = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}dogology_cohorts WHERE id = %d", $cohort_id
+        ));
+        if (!$cohort || $cohort->content_type !== 'ebook') {
+            return new WP_Error('bad_cohort', 'รุ่นนี้ไม่ใช่ ebook');
+        }
+
+        $student = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, display_name, email, line_uid FROM {$wpdb->prefix}dogology_users WHERE id = %d",
+            (int) $r->user_id
+        ));
+        if (!$student) return new WP_Error('no_student', 'ไม่พบนักเรียน');
+        if (!$student->line_uid && !$student->email) {
+            return new WP_Error('no_channel', 'ไม่มีทั้ง LINE และอีเมลสำหรับส่ง');
+        }
+
+        $orders = $wpdb->prefix . 'dogology_orders';
+        $number = 'SG-' . (int) $response_id;
+        $now    = current_time('mysql');
+
+        $wpdb->insert($orders, array(
+            'order_number'    => $number,
+            'product_id'      => (int) $cohort->product_id,
+            'cohort_id'       => $cohort_id,
+            'customer_name'   => $student->display_name ?: 'นักเรียน Dogology 101',
+            'customer_email'  => $student->email ?: '',
+            'line_user_id'    => $student->line_uid ?: '',
+            'original_amount' => 0,
+            'final_amount'    => 0,
+            'status'          => 'paid',
+            'meta'            => wp_json_encode(array(
+                'survey_grant'       => true,
+                'survey_key'         => self::SURVEY_KEY,
+                'survey_response_id' => (int) $response_id,
+                'granted_at'         => $now,
+            ), JSON_UNESCAPED_UNICODE),
+            'created_at'      => $now,
+        ));
+
+        // Lost the race (or a retry): the winner's order is the grant.
+        $order_id = (int) $wpdb->insert_id;
+        if (!$order_id) {
+            $order_id = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM $orders WHERE order_number = %s", $number
+            ));
+            if (!$order_id) return new WP_Error('order_failed', 'สร้างออร์เดอร์ไม่สำเร็จ');
+        }
+
+        // Stamp BEFORE delivering: a push that throws must not leave the row
+        // ungranted, or the next call mints a second order for the same person.
+        $wpdb->update(self::responses_table(),
+            array('ebook_granted_at' => $now), array('id' => (int) $response_id));
+
+        if (class_exists('Dogology_Commerce_Orders_API')) {
+            // Each helper no-ops when its channel is missing, so a student with
+            // only an email still gets the download link and vice versa.
+            Dogology_Commerce_Orders_API::send_payment_confirmation_line($order_id);
+            if ($student->email) {
+                Dogology_Commerce_Orders_API::send_order_email($order_id, 'payment_received');
+            }
+        }
+
+        return $order_id;
     }
 
     /** Front-end route: /101-survey/ */
@@ -757,6 +935,7 @@ DLCSS;
             if (!defined('DONOTCACHEPAGE')) define('DONOTCACHEPAGE', true);
             if (!defined('DONOTROCKETOPTIMIZE')) define('DONOTROCKETOPTIMIZE', true);
             nocache_headers();
+            self::maybe_handle_post();
             // A template fatal took the whole route down with a bare 500 and no
             // message. Fail visibly but gracefully instead, and record it.
             try {
@@ -789,6 +968,11 @@ DLCSS;
             'methods'             => 'POST',
             'permission_callback' => '__return_true',
             'callback'            => array(__CLASS__, 'handle_submit'),
+        ));
+        register_rest_route('dogology-learning/v1', '/survey-photo', array(
+            'methods'             => 'POST',
+            'permission_callback' => '__return_true',
+            'callback'            => array(__CLASS__, 'handle_photo'),
         ));
         register_rest_route('dogology-learning/v1', '/survey-liff', array(
             'methods'             => 'POST',
@@ -829,6 +1013,84 @@ DLCSS;
         }
         Dogology_Auth::login_student($user_id);
         return new WP_REST_Response(array('ok' => true), 200);
+    }
+
+    /**
+     * Native form POST — the baseline, not the enhancement.
+     *
+     * The page submits over fetch(); if that script is ever stripped (minifier,
+     * CSP, a browser that chokes on it) the browser falls back to a real POST.
+     * Without a handler here that POST re-rendered an empty wizard and ten
+     * screens of answers were gone with no error. Now the two paths do the same
+     * thing, and JS is only saving a page load.
+     */
+    protected static function maybe_handle_post()
+    {
+        if (empty($_SERVER['REQUEST_METHOD']) || $_SERVER['REQUEST_METHOD'] !== 'POST') return;
+        if (empty($_POST['dl_survey_nonce'])
+            || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['dl_survey_nonce'])), 'dl_survey_submit')) {
+            return; // stale page — fall through and re-render rather than 403
+        }
+
+        $student = Dogology_Auth::get_current_student();
+        $user_id = $student ? (int) $student->id : 0;
+        if (!$user_id) return;
+
+        // The wizard's own state radio is navigation, not an answer.
+        $payload = wp_unslash($_POST);
+        unset($payload['wz'], $payload['dl_survey_nonce'], $payload['_wp_http_referer']);
+
+        // Native POST names multi-selects "applied[]"; PHP already gives us the
+        // array under "applied", so the shapes match what store() expects.
+        $res = self::store($user_id, $payload);
+        $arg = is_wp_error($res) ? array('err' => $res->get_error_code()) : array('done' => 1);
+        wp_safe_redirect(add_query_arg($arg, home_url('/101-survey/')));
+        exit;
+    }
+
+    /**
+     * Dog photo upload. Uploaded on pick rather than with the answers, because
+     * the submit is JSON and a file can't ride in it — only the resulting
+     * attachment id travels with the response.
+     *
+     * Gated on a real student session and images only: this writes to the media
+     * library, so an open endpoint would be a public file drop.
+     */
+    public static function handle_photo($request)
+    {
+        $student = Dogology_Auth::get_current_student();
+        if (!$student) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'not_logged_in'), 401);
+        }
+        if (empty($_FILES['file'])) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'no_file'), 400);
+        }
+        $file = $_FILES['file'];
+        if (!empty($file['size']) && $file['size'] > 8 * MB_IN_BYTES) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'too_large'), 400);
+        }
+        $check = wp_check_filetype(isset($file['name']) ? $file['name'] : '');
+        if (empty($check['type']) || strpos($check['type'], 'image/') !== 0) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'not_image'), 400);
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+        require_once ABSPATH . 'wp-admin/includes/media.php';
+        require_once ABSPATH . 'wp-admin/includes/image.php';
+
+        $id = media_handle_upload('file', 0, array(
+            'post_title' => 'Survey photo — student ' . (int) $student->id,
+        ), array('test_form' => false));
+        if (is_wp_error($id)) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'upload_failed',
+                'message' => $id->get_error_message()), 400);
+        }
+        update_post_meta($id, '_dl_survey_student', (int) $student->id);
+
+        return new WP_REST_Response(array(
+            'ok' => true, 'attachment_id' => (int) $id,
+            'url' => wp_get_attachment_image_url($id, 'thumbnail') ?: wp_get_attachment_url($id),
+        ), 200);
     }
 
     public static function handle_submit($request)
