@@ -710,6 +710,16 @@ DLCSS;
             add_rewrite_rule('^101-survey/?$', 'index.php?dl_survey=1', 'top');
         });
         add_filter('query_vars', function ($v) { $v[] = 'dl_survey'; return $v; });
+        // Belt and braces: define the bypass constants as early as `wp` so
+        // Rocket never queues its optimisation for this request. By
+        // template_redirect it is already too late for some of them.
+        add_action('wp', function () {
+            if (!get_query_var('dl_survey')) return;
+            if (!defined('DONOTCACHEPAGE'))      define('DONOTCACHEPAGE', true);
+            if (!defined('DONOTROCKETOPTIMIZE')) define('DONOTROCKETOPTIMIZE', true);
+            if (!defined('DONOTMINIFY'))         define('DONOTMINIFY', true);
+            if (!defined('DONOTASYNCCSS'))       define('DONOTASYNCCSS', true);
+        }, 1);
         add_action('template_redirect', function () {
             if (!get_query_var('dl_survey')) return;
             if (!defined('DONOTCACHEPAGE')) define('DONOTCACHEPAGE', true);

@@ -84,6 +84,9 @@ class Dogology_Learning_Router
         $urls[] = '/my-courses/?(.*)';
         $urls[] = '/student-login/?(.*)';
         $urls[] = '/student-logout/?(.*)';
+        // The survey page carries its stylesheet INLINE, so Remove Unused CSS
+        // strips it and the page renders as unstyled stacked blocks.
+        $urls[] = '/101-survey/?(.*)';
         return $urls;
     }
 
@@ -93,7 +96,10 @@ class Dogology_Learning_Router
      */
     public function disable_rocket_on_learning_pages()
     {
-        if (!get_query_var('dl_route'))
+        // dl_survey is a separate query var from dl_route — checking only
+        // dl_route meant DONOTROCKETOPTIMIZE was never defined on the survey
+        // page, so Rocket optimised it and broke the inline CSS.
+        if (!get_query_var('dl_route') && !get_query_var('dl_survey'))
             return;
 
         if (!defined('DONOTROCKETOPTIMIZE')) {
