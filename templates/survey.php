@@ -143,7 +143,10 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
       <a class="gatebtn" id="dlbtn"
          href="<?php echo esc_url(add_query_arg('openExternalBrowser', '1', $dl)); ?>"
          data-raw="<?php echo esc_url($dl); ?>">ดาวน์โหลดอีบุ๊ก</a>
-      <p class="fine" style="margin-top:14px">ถ้าเปิดไม่ขึ้น เปิดลิงก์ที่เราส่งให้ทาง LINE ได้เลยครับ</p>
+      <p class="fine" style="margin-top:14px">
+        ถ้าเปิดไม่ขึ้น กดค้างที่ลิงก์นี้เพื่อคัดลอกแล้วเปิดในเบราว์เซอร์ได้เลยครับ<br>
+        <a href="<?php echo esc_url($dl); ?>" style="color:var(--teal-deep);word-break:break-all"><?php echo esc_html($dl); ?></a>
+      </p>
       <?php
       // A PDF opened INSIDE the LIFF webview can't be saved — the viewer has no
       // download affordance. openExternalBrowser=1 only breaks out when a link
@@ -174,8 +177,12 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
           ready.then(function () {
             liff.openWindow({url: raw, external: true});
           }).catch(function () {
-            // No SDK / init failed: last resort is the LINE-scheme escape.
-            location.href = 'line://app/openExternalBrowser?url=' + encodeURIComponent(raw);
+            // No SDK / init failed. Fall back to the ordinary link — it opens
+            // in the webview, which is worse than an external browser but is a
+            // working page. (A previous attempt used
+            // line://app/openExternalBrowser, which is NOT a real LINE scheme:
+            // iOS could not resolve it and showed a bare "System error".)
+            location.href = btn.getAttribute('href');
           });
         });
       })();
