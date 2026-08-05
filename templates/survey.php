@@ -140,7 +140,33 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
     ?>
     <?php if ($dl): ?>
       <p>ขอบคุณที่สละเวลาตอบนะครับ<br>ดาวน์โหลดอีบุ๊กได้เลย และเราส่งลิงก์ให้ทาง LINE ไว้ด้วยแล้ว</p>
-      <a class="gatebtn" href="<?php echo esc_url(add_query_arg('openExternalBrowser', '1', $dl)); ?>">ดาวน์โหลดอีบุ๊ก</a>
+      <a class="gatebtn" id="dlbtn"
+         href="<?php echo esc_url(add_query_arg('openExternalBrowser', '1', $dl)); ?>"
+         data-raw="<?php echo esc_url($dl); ?>">ดาวน์โหลดอีบุ๊ก</a>
+      <p class="fine" style="margin-top:14px">ถ้าเปิดไม่ขึ้น เปิดลิงก์ที่เราส่งให้ทาง LINE ได้เลยครับ</p>
+      <?php
+      // A PDF opened INSIDE the LIFF webview can't be saved — the viewer has no
+      // download affordance. openExternalBrowser=1 only breaks out when a link
+      // is tapped from a LINE chat; from inside a webview the escape hatch is
+      // liff.openWindow({external:true}). The plain href stays as the fallback
+      // for real browsers, where none of this applies.
+      $dl_liff = trim((string) get_option('dogology_commerce_liff_id', ''));
+      if ($dl_liff): ?>
+      <script src="https://static.line-login.jp/liff/edge/2/sdk.js"></script>
+      <script>
+      (function () {
+        var btn = document.getElementById('dlbtn');
+        if (!btn || typeof liff === 'undefined') return;
+        liff.init({liffId: '<?php echo esc_js($dl_liff); ?>'}).then(function () {
+          if (!liff.isInClient || !liff.isInClient()) return;   // real browser: leave the href alone
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            liff.openWindow({url: btn.getAttribute('data-raw'), external: true});
+          });
+        }).catch(function () { /* href fallback stands */ });
+      })();
+      </script>
+      <?php endif; ?>
     <?php else: ?>
       <p>ขอบคุณที่สละเวลาตอบนะครับ<br>เราจะส่งอีบุ๊กให้ทาง LINE เร็ว ๆ นี้</p>
     <?php endif; ?>
