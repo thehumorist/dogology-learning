@@ -401,34 +401,72 @@ class Dogology_Learning_Survey_Blast
             $url = home_url($path);
         }
 
+        // TABLE layout with bgcolor attributes, not styled <div>s. Mail clients
+        // routinely drop background-color from a div and then auto-scale the
+        // text, which is exactly how the first version arrived: no header band,
+        // no button, everything huge. bgcolor + table cells survive that.
+        $font = "font-family:'Noto Sans Thai',-apple-system,'Helvetica Neue',Tahoma,sans-serif";
+
         $paras = '';
         foreach (preg_split("/\n\n+/", $c['body']) as $p) {
-            $paras .= '<p style="margin:0 0 16px;font-size:15px;line-height:1.85;color:#475569">'
-                    . nl2br(esc_html($p)) . '</p>';
+            $paras .= '<p style="margin:0 0 16px;' . $font
+                    . ';font-size:15px;line-height:1.8;color:#475569">' . nl2br(esc_html($p)) . '</p>';
         }
 
-        $html = '<div style="background:#F1F5F9;padding:24px 0">'
-          . '<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;'
-          . 'font-family:\'Noto Sans Thai\',Tahoma,sans-serif">'
-          . '<div style="background:' . esc_attr($c['c1']) . ';padding:26px 24px;text-align:center">'
-          . '<div style="color:#fff;font-weight:700;font-size:19px;line-height:1.5">' . esc_html($c['hero']) . '</div>'
-          . '<div style="color:#fff;font-weight:700;font-size:19px;line-height:1.5">' . esc_html($c['sub']) . '</div>'
-          . '</div>'
-          . '<div style="padding:26px 24px">'
-          . '<p style="margin:0 0 14px;font-size:17px;font-weight:700;color:#0F172A">' . esc_html($c['title']) . '</p>'
+        $head = esc_attr($c['c1']);
+        $btn  = esc_attr($c['c2']);
+        $u    = esc_url($url);
+
+        $html = '<!doctype html><html><head><meta charset="utf-8">'
+          . '<meta name="viewport" content="width=device-width,initial-scale=1">'
+          . '<meta name="x-apple-disable-message-reformatting">'
+          . '<style>body{margin:0;padding:0;-webkit-text-size-adjust:100%;text-size-adjust:100%}'
+          . 'a{text-decoration:none}</style></head>'
+          . '<body style="margin:0;padding:0;background-color:#F1F5F9">'
+          . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#F1F5F9">'
+          . '<tr><td align="center" style="padding:24px 12px">'
+
+          . '<table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0"'
+          . ' style="width:100%;max-width:560px;background-color:#ffffff;border-radius:14px;overflow:hidden">'
+
+          // header band
+          . '<tr><td bgcolor="' . $head . '" align="center"'
+          . ' style="background-color:' . $head . ';padding:26px 24px">'
+          . '<div style="' . $font . ';color:#ffffff;font-weight:700;font-size:19px;line-height:1.5">'
+          . esc_html($c['hero']) . '</div>'
+          . '<div style="' . $font . ';color:#ffffff;font-weight:700;font-size:19px;line-height:1.5">'
+          . esc_html($c['sub']) . '</div>'
+          . '</td></tr>'
+
+          // body
+          . '<tr><td style="padding:26px 24px">'
+          . '<p style="margin:0 0 14px;' . $font . ';font-size:17px;font-weight:700;color:#0F172A">'
+          . esc_html($c['title']) . '</p>'
           . $paras
-          . '<p style="margin:26px 0 10px;text-align:center">'
-          . '<a href="' . esc_url($url) . '" style="display:inline-block;background:' . esc_attr($c['c2'])
-          . ';color:#fff;text-decoration:none;padding:14px 28px;border-radius:999px;font-weight:700;font-size:15px">'
-          . esc_html($c['cta']) . '</a></p>'
-          . '<p style="margin:0;text-align:center;font-size:12px;color:#94A3B8">' . esc_html($c['note']) . '</p>'
-          . '<p style="margin:22px 0 0;font-size:12px;color:#94A3B8;line-height:1.7">'
+
+          // bulletproof button: a one-cell table with bgcolor, not a styled <a>
+          . '<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"'
+          . ' style="margin:26px auto 10px"><tr>'
+          . '<td bgcolor="' . $btn . '" align="center"'
+          . ' style="background-color:' . $btn . ';border-radius:999px">'
+          . '<a href="' . $u . '" style="display:inline-block;' . $font
+          . ';color:#ffffff;font-size:15px;font-weight:700;line-height:1.2;'
+          . 'padding:15px 30px;text-decoration:none">' . esc_html($c['cta']) . '</a>'
+          . '</td></tr></table>'
+
+          . '<p style="margin:0;text-align:center;' . $font . ';font-size:12px;color:#94A3B8">'
+          . esc_html($c['note']) . '</p>'
+          . '<p style="margin:22px 0 0;' . $font . ';font-size:12px;color:#94A3B8;line-height:1.7">'
           . 'ถ้าปุ่มกดไม่ได้ เปิดลิงก์นี้ได้เลยครับ<br>'
-          . '<a href="' . esc_url($url) . '" style="color:#0F766E">' . esc_html($url) . '</a></p>'
-          . '</div>'
-          . '<div style="padding:16px 24px;background:#F8FAFC;text-align:center;font-size:11px;color:#94A3B8">'
-          . 'Dogology · โรงเรียนฝึกสุนัข</div>'
-          . '</div></div>';
+          . '<a href="' . $u . '" style="color:#0F766E;word-break:break-all">' . esc_html($url) . '</a></p>'
+          . '</td></tr>'
+
+          // footer
+          . '<tr><td bgcolor="#F8FAFC" align="center"'
+          . ' style="background-color:#F8FAFC;padding:16px 24px;' . $font
+          . ';font-size:11px;color:#94A3B8">Dogology · โรงเรียนฝึกสุนัข</td></tr>'
+
+          . '</table></td></tr></table></body></html>';
 
         return array('subject' => $c['title'], 'html' => $html);
     }
