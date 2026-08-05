@@ -202,21 +202,37 @@ if (class_exists('Dogology_Learning_Builder')) {
             $counts[(int) $row->lesson_id] = (int) $row->done;
         }
 
+        // A lesson published after most students last studied looks like a
+        // catastrophic drop-off when it is really just new. Anything newer than
+        // the most recent completion in the course is flagged rather than read
+        // as a cliff — and, critically, is skipped when carrying `prev` forward,
+        // so it does not manufacture a fake drop for the lesson AFTER it too.
+        $latest_activity = $wpdb->get_var($wpdb->prepare(
+            "SELECT MAX(updated_at) FROM $table_progress WHERE course_id = %d AND completed = 1",
+            $stat['id']
+        ));
+
         $items = [];
         $prev  = null;
         $pos   = 0;
         foreach (Dogology_Learning_Builder::build_tree($stat['id']) as $node) {
             foreach ($node['lessons'] as $lesson) {
-                $done = $counts[(int) $lesson->ID] ?? 0;
+                $done   = $counts[(int) $lesson->ID] ?? 0;
+                $is_new = $latest_activity && $lesson->post_date > $latest_activity;
+
                 $items[] = [
                     'pos'    => ++$pos,
                     'module' => $node['module']->post_title,
                     'title'  => $lesson->post_title,
                     'done'   => $done,
                     'pct'    => $stat['enrolled'] > 0 ? ($done / $stat['enrolled']) * 100 : 0,
-                    'drop'   => $prev === null ? null : $prev - $done,
+                    'drop'   => ($prev === null || $is_new) ? null : $prev - $done,
+                    'is_new' => $is_new,
                 ];
-                $prev = $done;
+
+                if (!$is_new) {
+                    $prev = $done;
+                }
             }
         }
 
@@ -435,7 +451,12 @@ $bucket_labels = [
                 <?php foreach ($course_block['items'] as $item): ?>
                 <tr>
                     <td style="color:#999;"><?php echo (int) $item['pos']; ?></td>
-                    <td><?php echo esc_html($item['title']); ?></td>
+                    <td>
+                        <?php echo esc_html($item['title']); ?>
+                        <?php if (!empty($item['is_new'])): ?>
+                            <span style="background:#e0f2fe; color:#0369a1; font-size:11px; padding:1px 6px; border-radius:10px; margin-left:6px;">new</span>
+                        <?php endif; ?>
+                    </td>
                     <td style="color:#999; font-size:12px;"><?php echo esc_html($item['module']); ?></td>
                     <td>
                         <div style="background:#f1f5f9; border-radius:3px; height:16px;">
