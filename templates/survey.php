@@ -155,35 +155,39 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
       // for real browsers, where none of this applies.
       $dl_liff = trim((string) get_option('dogology_commerce_liff_id', ''));
       if ($dl_liff): ?>
-      <script src="https://static.line-login.jp/liff/edge/2/sdk.js"></script>
+      <?php /* Same SDK host commerce uses. */ ?>
+      <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
       <script>
+      // Mirrors dogology-commerce templates/success.php, which is the version
+      // that actually works in production. Two things learned from it:
+      //
+      //  1. Do NOT gate the click on liff.init() resolving. Commerce checks
+      //     isInClient() at click time and calls openWindow directly. My
+      //     earlier version only called openWindow inside init().then(), so a
+      //     failed init meant the escape never ran at all.
+      //  2. Only init inside a genuine commerce-LIFF tab (the dcLiffCtx marker
+      //     commerce's router sets). Commerce's own note: init from another
+      //     LIFF's browser triggers LINE's OAuth redirect_uri 400 — which is
+      //     the likeliest reason init was rejecting here.
       (function () {
-        var btn = document.getElementById('dlbtn');
-        if (!btn) return;
-        var raw = btn.getAttribute('data-raw');
-        var inClient = /\bLine\//i.test(navigator.userAgent);   // true inside the LINE webview
-        if (!inClient) return;                                  // real browser: the href is correct
+        var b = document.getElementById('dlbtn');
+        if (!b) return;
 
-        // The handler is attached NOW, not after liff.init() resolves. Attaching
-        // it in the .then() left a window where an early tap fell through to the
-        // href — and openExternalBrowser=1 cannot escape from inside a webview,
-        // which is exactly the "still opens in LIFF" symptom.
-        var ready = (typeof liff === 'undefined')
-          ? Promise.reject()
-          : liff.init({liffId: '<?php echo esc_js($dl_liff); ?>'});
+        var inCommerceLiff = false;
+        try { inCommerceLiff = sessionStorage.getItem('dcLiffCtx') === '1'; } catch (e) {}
+        if (inCommerceLiff && window.liff) {
+          try { liff.init({liffId: '<?php echo esc_js($dl_liff); ?>'}).catch(function () {}); } catch (e) {}
+        }
 
-        btn.addEventListener('click', function (e) {
-          e.preventDefault();
-          ready.then(function () {
-            liff.openWindow({url: raw, external: true});
-          }).catch(function () {
-            // No SDK / init failed. Fall back to the ordinary link — it opens
-            // in the webview, which is worse than an external browser but is a
-            // working page. (A previous attempt used
-            // line://app/openExternalBrowser, which is NOT a real LINE scheme:
-            // iOS could not resolve it and showed a bare "System error".)
-            location.href = btn.getAttribute('href');
-          });
+        b.addEventListener('click', function (e) {
+          if (typeof liff !== 'undefined' && liff.isInClient && liff.isInClient()
+              && typeof liff.openWindow === 'function') {
+            e.preventDefault();
+            // The href already carries openExternalBrowser=1, exactly as
+            // commerce passes its own href straight into openWindow.
+            try { liff.openWindow({url: b.getAttribute('href'), external: true}); }
+            catch (err) { window.location.href = b.getAttribute('href'); }
+          }
         });
       })();
       </script>
