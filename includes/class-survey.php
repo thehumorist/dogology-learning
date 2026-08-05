@@ -970,6 +970,21 @@ DLCSS;
         $wpdb->update(self::responses_table(),
             array('ebook_granted_at' => $now), array('id' => (int) $response_id));
 
+        // Grant LMS access. Inserting a paid row is not enough — course/ebook
+        // entitlement is granted by the integration listening on this action,
+        // which is why the first grants were downloadable from the flex link
+        // but never appeared in My Courses.
+        $full = $wpdb->get_row($wpdb->prepare(
+            "SELECT o.*, p.name AS product_name, c.name AS cohort_name, c.content_type
+             FROM $orders o
+             LEFT JOIN {$wpdb->prefix}dogology_products p ON o.product_id = p.id
+             LEFT JOIN {$wpdb->prefix}dogology_cohorts  c ON o.cohort_id  = c.id
+             WHERE o.id = %d", $order_id
+        ));
+        if ($full) {
+            do_action('dogology_order_approved', $order_id, $full, 'paid');
+        }
+
         if (class_exists('Dogology_Commerce_Orders_API')) {
             // Each helper no-ops when its channel is missing, so a student with
             // only an email still gets the download link and vice versa.
@@ -980,6 +995,36 @@ DLCSS;
         }
 
         return $order_id;
+    }
+
+    /**
+     * Signed download link for the ebook this student was just granted, so the
+     * thank-you screen hands over the thing they answered for instead of
+     * bouncing them to My Courses to go looking for it.
+     *
+     * @return string '' when there is no grant to point at.
+     */
+    public static function grant_download_url($user_id)
+    {
+        global $wpdb;
+        if (!class_exists('Dogology_Ebook')) return '';
+
+        $rid = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM " . self::responses_table() . "
+             WHERE survey_key = %s AND user_id = %d AND ebook_granted_at IS NOT NULL",
+            self::SURVEY_KEY, (int) $user_id
+        ));
+        if (!$rid) return '';
+
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT o.id, c.linked_course_id
+             FROM {$wpdb->prefix}dogology_orders o
+             LEFT JOIN {$wpdb->prefix}dogology_cohorts c ON o.cohort_id = c.id
+             WHERE o.order_number = %s", 'SG-' . $rid
+        ));
+        if (!$row || empty($row->linked_course_id)) return '';
+
+        return Dogology_Ebook::signed_download_url((int) $row->id, (int) $row->linked_course_id);
     }
 
     /** Front-end route: /101-survey/ */

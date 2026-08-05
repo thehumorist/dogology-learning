@@ -133,8 +133,17 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
 <?php if ($responded || $done_flag): ?>
   <div class="gate">
     <h1>ได้รับคำตอบแล้วครับ</h1>
-    <p>ขอบคุณที่สละเวลาตอบนะครับ<br>เราจะส่งอีบุ๊กให้ทาง LINE เร็ว ๆ นี้</p>
-    <a class="gatebtn" href="<?php echo esc_url(home_url('/my-courses/')); ?>">กลับไปหน้าคอร์สของฉัน</a>
+    <?php
+    // Hand over the ebook here rather than sending them to My Courses to hunt
+    // for it — it is the thing they answered for.
+    $dl = $student ? Dogology_Learning_Survey::grant_download_url((int) $student->id) : '';
+    ?>
+    <?php if ($dl): ?>
+      <p>ขอบคุณที่สละเวลาตอบนะครับ<br>ดาวน์โหลดอีบุ๊กได้เลย และเราส่งลิงก์ให้ทาง LINE ไว้ด้วยแล้ว</p>
+      <a class="gatebtn" href="<?php echo esc_url(add_query_arg('openExternalBrowser', '1', $dl)); ?>">ดาวน์โหลดอีบุ๊ก</a>
+    <?php else: ?>
+      <p>ขอบคุณที่สละเวลาตอบนะครับ<br>เราจะส่งอีบุ๊กให้ทาง LINE เร็ว ๆ นี้</p>
+    <?php endif; ?>
   </div>
 
 <?php elseif (!$ctx): ?>
