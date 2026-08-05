@@ -55,6 +55,15 @@ $initial      = $display_name !== '' ? mb_substr($display_name, 0, 1, 'UTF-8') :
 $topics       = $ctx ? Dogology_Learning_Survey::topics_for($ctx) : array();
 $is_unf       = $ctx ? $ctx['is_unfinished'] : false;
 $responded    = $student ? Dogology_Learning_Survey::has_responded((int) $student->id) : false;
+// Test mode clears the old response on SUBMIT — but the thank-you gate below
+// meant the tester could never reach the form to submit again. Show them the
+// wizard instead. Scoped to the one nominated test student, so a real
+// respondent still gets the gate and cannot answer twice.
+if ($responded && $student
+    && Dogology_Learning_Survey::test_mode()
+    && (int) $student->id === Dogology_Learning_Survey::test_user()) {
+    $responded = false;
+}
 $done_flag    = !empty($_GET['done']);
 
 $topic_opts = array();
