@@ -13,15 +13,24 @@
  */
 if (!defined('ABSPATH')) exit;
 
-// A signed ?t= from the LINE message establishes the session before anything
-// else runs — this is the primary identity path, LIFF is only a fallback.
-if (empty($_COOKIE) || !Dogology_Auth::get_current_student()) {
-    if (!empty($_GET['t'])) {
-        $tok_uid = Dogology_Learning_Survey::verify_token(sanitize_text_field(wp_unslash($_GET['t'])));
-        if ($tok_uid) Dogology_Auth::login_student($tok_uid);
+/**
+ * A signed ?t= from the LINE message establishes the session. This is the
+ * PRIMARY identity path; LIFF is only a fallback.
+ *
+ * login_student() writes the cookie with setcookie(), which does NOT populate
+ * $_COOKIE for the current request — so re-reading the cookie here always came
+ * back empty and the gate showed even though the token was valid. Load the
+ * student directly for this request instead.
+ */
+$student = Dogology_Auth::get_current_student();
+if (!$student && !empty($_GET['t'])) {
+    $tok_uid = Dogology_Learning_Survey::verify_token(sanitize_text_field(wp_unslash($_GET['t'])));
+    if ($tok_uid) {
+        Dogology_Auth::login_student($tok_uid);          // persist for later requests
+        $dl_db   = new Dogology_Student_DB();
+        $student = $dl_db->get_student($tok_uid);        // and use it right now
     }
 }
-$student = Dogology_Auth::get_current_student();
 $ctx     = $student ? Dogology_Learning_Survey::context_for((int) $student->id) : null;
 
 $display_name = $student && !empty($student->display_name) ? $student->display_name : '';
@@ -130,9 +139,23 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
       document.getElementById('gate-title').textContent = t;
       document.getElementById('gate-body').textContent  = b;
     }
-    if (typeof liff === 'undefined') { stop('ยังไม่พบข้อมูลผู้เรียน', 'เปิดลิงก์นี้จากแชท LINE ของ Dogology หรือเข้าสู่ระบบก่อนครับ'); return; }
+    // In an external browser liff.init() may never settle, which left the gate
+    // stuck on "checking" forever. Always resolve the UI within 4s.
+    var settled = false;
+    setTimeout(function () {
+      if (!settled) stop('ยังไม่พบข้อมูลผู้เรียน', 'เปิดลิงก์นี้จากแชท LINE ของ Dogology หรือกดเข้าสู่ระบบด้านล่างครับ');
+    }, 4000);
+    if (typeof liff === 'undefined') { settled = true; stop('ยังไม่พบข้อมูลผู้เรียน', 'เปิดลิงก์นี้จากแชท LINE ของ Dogology หรือกดเข้าสู่ระบบด้านล่างครับ'); return; }
     liff.init({liffId: '<?php echo esc_js($liff_id); ?>'}).then(function () {
-      if (!liff.isLoggedIn()) { liff.login({redirectUri: location.href}); return; }
+      // Only bounce through LINE login when we are actually inside LINE —
+      // in an external browser that redirect is a dead end.
+      if (!liff.isLoggedIn()) {
+        settled = true;
+        if (liff.isInClient && liff.isInClient()) { liff.login({redirectUri: location.href}); }
+        else { stop('ยังไม่พบข้อมูลผู้เรียน', 'เปิดลิงก์นี้จากแชท LINE ของ Dogology หรือกดเข้าสู่ระบบด้านล่างครับ'); }
+        return;
+      }
+      settled = true;
       return fetch('<?php echo esc_url_raw(rest_url('dogology-learning/v1/survey-liff')); ?>', {
         method: 'POST', credentials: 'same-origin',
         headers: {'Content-Type': 'application/json'},
