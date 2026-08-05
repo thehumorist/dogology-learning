@@ -99,12 +99,39 @@ foreach ($courses as $course) {
     $finished      = 0;
     $up_to_date    = 0;
     $avg_pct       = 0;
+    $buckets       = [
+        '0'      => 0,
+        '1-25'   => 0,
+        '26-50'  => 0,
+        '51-75'  => 0,
+        '76-99'  => 0,
+        '100'    => 0,
+    ];
 
     if ($total_lessons > 0 && $enrolled > 0) {
         $sum_pct = 0;
         foreach ($progress_by_course[$cid] as $row) {
             $done     = $row['done'];
-            $sum_pct += min(100, ($done / $total_lessons) * 100);
+            $pct      = min(100, ($done / $total_lessons) * 100);
+            $sum_pct += $pct;
+
+            // Distribution bucket. "Not started" is kept separate from
+            // "barely started" on purpose — the two call for different
+            // interventions, and lumping them hides how big the never-opened
+            // group is.
+            if ($done <= 0) {
+                $buckets['0']++;
+            } elseif ($pct >= 100) {
+                $buckets['100']++;
+            } elseif ($pct <= 25) {
+                $buckets['1-25']++;
+            } elseif ($pct <= 50) {
+                $buckets['26-50']++;
+            } elseif ($pct <= 75) {
+                $buckets['51-75']++;
+            } else {
+                $buckets['76-99']++;
+            }
 
             if ($done >= $total_lessons) {
                 $up_to_date++;
@@ -140,8 +167,20 @@ foreach ($courses as $course) {
         'finished'      => $finished,
         'up_to_date'    => $up_to_date,
         'avg_pct'       => $avg_pct,
+        'buckets'       => $buckets,
     ];
 }
+
+// Bucket display config, in order. Colour runs cold (dropped off) to warm
+// (nearly there) to teal (done), matching the palette already on this screen.
+$bucket_labels = [
+    '0'     => ['label' => 'Not started', 'color' => '#cbd5e1'],
+    '1-25'  => ['label' => '1–25%',       'color' => '#fca5a5'],
+    '26-50' => ['label' => '26–50%',      'color' => '#fcd34d'],
+    '51-75' => ['label' => '51–75%',      'color' => '#93c5fd'],
+    '76-99' => ['label' => '76–99%',      'color' => '#60a5fa'],
+    '100'   => ['label' => 'Complete',    'color' => '#00AB8E'],
+];
 
 ?>
 
@@ -240,6 +279,62 @@ foreach ($courses as $course) {
             <strong>Up to Date</strong> = completed every lesson published right now — the gap between
             the two columns is who to nudge about newly added lessons.
         </p>
+    </div>
+
+    <!-- Progress Distribution -->
+    <div class="dl-card" style="margin-bottom: 20px;">
+        <div class="dl-card-header">
+            <h3 class="dl-card-title">Progress Distribution</h3>
+        </div>
+        <div style="padding: 8px 16px 16px;">
+            <?php
+            $charted = array_filter($course_stats, function ($stat) {
+                return $stat['total_lessons'] > 0 && $stat['enrolled'] > 0;
+            });
+            ?>
+            <?php if ($charted): ?>
+                <?php foreach ($charted as $stat): ?>
+                    <?php $max = max($stat['buckets']) ?: 1; ?>
+                    <div style="margin-bottom: 26px;">
+                        <div style="font-weight: 600; margin-bottom: 10px;">
+                            <?php echo esc_html($stat['name']); ?>
+                            <span style="font-weight: normal; color: #999;">
+                                — <?php echo number_format($stat['enrolled']); ?> students,
+                                <?php echo number_format($stat['total_lessons']); ?> lessons
+                            </span>
+                        </div>
+                        <?php foreach ($bucket_labels as $key => $meta): ?>
+                            <?php
+                            $count = $stat['buckets'][$key];
+                            $share = $stat['enrolled'] > 0 ? ($count / $stat['enrolled']) * 100 : 0;
+                            // Bars are scaled to the biggest bucket so small
+                            // buckets stay visible; the % label is the true
+                            // share of students, not the bar width.
+                            $width = ($count / $max) * 100;
+                            ?>
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
+                                <div style="width:90px; font-size:12px; color:#666; text-align:right; flex:none;">
+                                    <?php echo esc_html($meta['label']); ?>
+                                </div>
+                                <div style="flex:1; background:#f1f5f9; border-radius:3px; height:20px; position:relative;">
+                                    <div style="width:<?php echo esc_attr(round($width, 2)); ?>%; background:<?php echo esc_attr($meta['color']); ?>; height:100%; border-radius:3px; min-width:<?php echo $count > 0 ? '3px' : '0'; ?>;"></div>
+                                </div>
+                                <div style="width:110px; font-size:12px; color:#666; flex:none;">
+                                    <strong><?php echo number_format($count); ?></strong>
+                                    <span style="color:#999;">(<?php echo esc_html(round($share, 1)); ?>%)</span>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endforeach; ?>
+                <p style="margin:0; color:#999; font-size:12px;">
+                    Share of enrolled students by how much of the current curriculum they have completed.
+                    Bar length is scaled to the largest bucket; the percentage is the true share.
+                </p>
+            <?php else: ?>
+                <p style="color:#999; margin:0;">No course has published lessons and enrolled students yet.</p>
+            <?php endif; ?>
+        </div>
     </div>
 
     <!-- Recent Activity Table -->
