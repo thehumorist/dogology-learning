@@ -19,6 +19,29 @@ if (!empty($_POST['dl_survey_nonce']) && wp_verify_nonce($_POST['dl_survey_nonce
             : 'ปิดการส่งอัตโนมัติแล้ว';
     }
 
+    if ($action === 'toggle_test') {
+        $on  = !empty($_POST['test_on']) ? '1' : '0';
+        $uid = (int) ($_POST['test_user'] ?? 0);
+        update_option(Dogology_Learning_Survey::OPT_TEST_MODE, $on);
+        update_option(Dogology_Learning_Survey::OPT_TEST_USER, $uid);
+        $notice = $on === '1'
+            ? 'โหมดทดสอบเปิดอยู่ — คำตอบของ student id ' . $uid . ' จะถูกล้างทุกครั้งที่ส่งใหม่ (คนอื่นไม่กระทบ)'
+            : 'ปิดโหมดทดสอบแล้ว';
+    }
+
+    if ($action === 'reset_test') {
+        $uid = Dogology_Learning_Survey::test_user();
+        if (!$uid) {
+            $notice = 'ยังไม่ได้ตั้ง student id สำหรับทดสอบ';
+        } else {
+            $r = Dogology_Learning_Survey::purge_response($uid);
+            $notice = $r['response_id']
+                ? sprintf('ล้างคำตอบของ student %d แล้ว (คำตอบย่อย %d, ออร์เดอร์ %s)',
+                    $uid, $r['answers'], $r['order_id'] ?: '—')
+                : 'ไม่พบคำตอบของ student ' . $uid;
+        }
+    }
+
     if ($action === 'sample') {
         $res = Dogology_Learning_Survey_Blast::send_sample(
             sanitize_text_field($_POST['sample_uid'] ?? ''),
@@ -147,6 +170,30 @@ $fopts   = Dogology_Learning_Survey::options('friction');
       <p style="color:#666;margin-bottom:0">
         สแกนทุกชั่วโมง ใช้นิยาม "เรียนจบ" แบบ sticky และบันทึกใน ledger
         คนหนึ่งได้รับครั้งเดียวตลอดชีวิต การเพิ่มบทเรียนใหม่จะไม่ทำให้ส่งซ้ำ
+      </p>
+    </form>
+  </div>
+
+  <div class="dl-card" style="margin-bottom:20px">
+    <div class="dl-card-header"><h3 class="dl-card-title">โหมดทดสอบ</h3></div>
+    <form method="post">
+      <?php wp_nonce_field('dl_survey', 'dl_survey_nonce'); ?>
+      <input type="hidden" name="dl_action" value="toggle_test">
+      <label style="display:block;margin-bottom:10px">
+        <input type="checkbox" name="test_on" value="1" <?php checked(Dogology_Learning_Survey::test_mode()); ?>>
+        <strong>ล้างคำตอบอัตโนมัติทุกครั้งที่ส่ง</strong> (เฉพาะ student ด้านล่าง)
+      </label>
+      <label>student id สำหรับทดสอบ
+        <input type="number" name="test_user" min="0"
+               value="<?php echo (int) Dogology_Learning_Survey::test_user(); ?>" style="width:100px">
+      </label>
+      <button class="button button-primary" style="margin-left:10px">บันทึก</button>
+      <button class="button" name="dl_action" value="reset_test" formnovalidate
+              style="margin-left:6px">ล้างเดี๋ยวนี้</button>
+      <p style="color:#666;margin-bottom:0">
+        เปิดไว้ตอนทดสอบเท่านั้น คำตอบเดิมของ student คนนี้ พร้อมออร์เดอร์อีบุ๊กและสิทธิ์ที่ได้จากออร์เดอร์นั้น
+        จะถูกลบทุกครั้งที่กดส่งใหม่ ไม่กระทบสิทธิ์คอร์ส 101 และไม่กระทบนักเรียนคนอื่น
+        <strong>ปิดก่อนยิง Blast จริง</strong>
       </p>
     </form>
   </div>

@@ -773,8 +773,69 @@ DLCSS;
         return $id;
     }
 
+    const OPT_TEST_MODE = 'dogology_survey_test_mode';
+    const OPT_TEST_USER = 'dogology_survey_test_user';
+
+    public static function test_mode()  { return get_option(self::OPT_TEST_MODE, '0') === '1'; }
+    public static function test_user()  { return (int) get_option(self::OPT_TEST_USER, 0); }
+
+    /**
+     * Wipe one student's response so the survey can be taken again: the
+     * response, its answers, the invite-ledger row, the ฿0 grant order, and
+     * the LMS access that grant created — scoped to the ebook's own course, so
+     * a real 101 enrolment is never touched.
+     *
+     * @return array What was removed.
+     */
+    public static function purge_response($user_id)
+    {
+        global $wpdb;
+        $out = array('response_id' => 0, 'answers' => 0, 'order_id' => 0, 'course_id' => 0);
+
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM " . self::responses_table() . " WHERE survey_key = %s AND user_id = %d",
+            self::SURVEY_KEY, (int) $user_id
+        ));
+        if (!$row) return $out;
+
+        $rid = (int) $row->id;
+        $out['response_id'] = $rid;
+
+        $order = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, cohort_id FROM {$wpdb->prefix}dogology_orders WHERE order_number = %s", 'SG-' . $rid
+        ));
+        if ($order) {
+            $out['order_id']  = (int) $order->id;
+            $out['course_id'] = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT linked_course_id FROM {$wpdb->prefix}dogology_cohorts WHERE id = %d",
+                (int) $order->cohort_id));
+        }
+
+        $out['answers'] = (int) $wpdb->query($wpdb->prepare(
+            "DELETE FROM " . self::answers_table() . " WHERE response_id = %d", $rid));
+        $wpdb->delete(self::responses_table(), array('id' => $rid));
+        $wpdb->delete($wpdb->prefix . 'dogology_survey_invites',
+            array('survey_key' => self::SURVEY_KEY, 'user_id' => (int) $user_id));
+        if ($out['order_id']) {
+            $wpdb->delete($wpdb->prefix . 'dogology_orders', array('id' => $out['order_id']));
+            if ($out['course_id']) {
+                $wpdb->delete($wpdb->prefix . 'dogology_progress',
+                    array('user_id' => (int) $user_id, 'course_id' => $out['course_id']));
+            }
+        }
+        return $out;
+    }
+
     public static function store($user_id, array $payload)
     {
+        // Test mode: the operator retests this flow constantly, and the
+        // duplicate guard otherwise makes every run a one-shot. Scoped to ONE
+        // nominated student id so it can never wipe a real customer's answers,
+        // and off unless explicitly enabled in the admin screen.
+        if (self::test_mode() && self::test_user() && (int) $user_id === self::test_user()) {
+            self::purge_response((int) $user_id);
+        }
+
         global $wpdb;
         $ctx = self::context_for($user_id);
         if (!$ctx) return new WP_Error('no_access', 'ไม่พบสิทธิ์เข้าเรียนคอร์สนี้');
