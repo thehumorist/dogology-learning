@@ -306,7 +306,7 @@ for ($i = 1; $i <= 10; $i++) {
       <div class="hero">
         <p class="eyebrow">Dogology 101</p>
         <h1>แบบสอบถามผู้เรียน <span class="g">คอร์ส Dogology 101</span></h1>
-        <p class="lede">ตอนนี้เรากำลังจะปรับปรุงคอร์ส Dogology 101 ครั้งใหญ่ สิ่งที่คุณตอบวันนี้จะกำหนดว่าจะเพิ่มอะไรเข้าไปบ้าง ตอบตรง ๆ ได้เลยครับ ไม่ต้องเกรงใจ<br><br><b>เริ่มจากเลือกอีบุ๊กที่อยากได้ก่อน 1 เล่ม</b> แล้วตอบคำถามสั้น ๆ ประมาณ 3 นาที ตอบจบแล้วเราจะส่งเล่มที่เลือกให้ทาง LINE ครับ</p>
+        <p class="lede">ตอนนี้เรากำลังจะปรับปรุงคอร์ส Dogology 101 ครั้งใหญ่ สิ่งที่คุณตอบวันนี้จะกำหนดว่าจะเพิ่มอะไรเข้าไปบ้าง ตอบตรง ๆ ได้เลยครับ ไม่ต้องเกรงใจ<br><br><b>เลือกอีบุ๊กที่อยากอ่านไว้ก่อนได้เลยครับ 1 เล่ม</b> เดี๋ยวเราส่งให้ทาง LINE เอง ระหว่างนี้อยากชวนคุยเรื่องคอร์สสักสองสามคำถาม ใช้เวลาประมาณ 3 นาทีครับ</p>
         <div class="who-strip">
           <div class="av"><?php echo esc_html($initial); ?></div>
           <div class="nm"><b><?php echo esc_html($display_name ?: 'ผู้เรียน'); ?></b><span>เข้าสู่ระบบด้วย LINE อัตโนมัติ</span></div>
@@ -335,7 +335,7 @@ for ($i = 1; $i <= 10; $i++) {
         <?php /* Feedback from a real run: people expected the book to arrive on
                  selection, and were unclear what the questions would be about.
                  State both, at the moment they press ถัดไป. */ ?>
-        <p class="fine" style="margin-top:18px">เลือกแล้วกด "ถัดไป" เพื่อตอบคำถามเกี่ยวกับคอร์ส Dogology 101<br>เราจะส่งอีบุ๊กให้ทาง LINE หลังตอบแบบสอบถามจบครับ</p>
+        <p class="fine" style="margin-top:18px">เลือกเสร็จแล้วกด "ถัดไป" เพื่อคุยกันต่อเรื่องคอร์ส Dogology 101<br>เล่มที่เลือกไว้ เราส่งให้ทาง LINE เองครับ</p>
       </div>
       <?php $n = $nav(1); dl_srv_nav($n['back'], $n['next'], $n['last']); ?>
     </section>
@@ -537,7 +537,7 @@ for ($i = 1; $i <= 10; $i++) {
           <span class="sub">สิ่งที่คุณเล่ามาจะถูกอ่านจริง ๆ และจะถูกใช้ตัดสินใจว่าจะปรับอะไรก่อนครับ</span>
         </div>
         <?php endif; ?>
-        <p class="fine">กดส่งแล้วเราจะส่งอีบุ๊กให้ทาง LINE ครับ</p>
+        <p class="fine">ขอบคุณที่สละเวลานะครับ เดี๋ยวเราส่งอีบุ๊กให้ทาง LINE ครับ</p>
       </div>
       <?php $n = $nav(10); dl_srv_nav($n['back'], 0, true); ?>
     </section>
