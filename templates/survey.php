@@ -280,8 +280,20 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
  * stayed hidden: a completely blank page.
  */
 ?>
-<input class="ci" type="radio" name="wz" id="w1" checked>
-<?php for ($i = 2; $i <= 10; $i++) printf('<input class="ci" type="radio" name="wz" id="w%d">' . "\n", $i); ?>
+<?php
+/**
+ * The DEFAULT-CHECKED radio must be the first panel of THIS student's
+ * sequence, not hard-coded to w1. Panel 1 (the ebook picker) is hidden for
+ * unfinished students, and `#w1:checked ~ .shell .p1{display:flex}` is the
+ * only rule that shows anything at load — so hard-coding w1 renders a blank
+ * wizard for them.
+ */
+$first = reset($seq);
+for ($i = 1; $i <= 10; $i++) {
+    printf('<input class="ci" type="radio" name="wz" id="w%d"%s>' . "\n",
+        $i, ($i === $first ? ' checked' : ''));
+}
+?>
 <div class="shell">
   <div class="form">
     <div class="prog"><div class="bar"><div class="fill"></div></div></div>
