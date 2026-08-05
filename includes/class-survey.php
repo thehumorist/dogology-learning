@@ -137,7 +137,7 @@ class Dogology_Learning_Survey
 html{-webkit-text-size-adjust:100%}
 body{margin:0;font-family:'Noto Sans Thai Looped','TH Sarabun New','TH SarabunPSK',Thonburi,'Noto Sans Thai',sans-serif;background:#fff;color:var(--ink);
   line-height:1.75;font-size:15px;padding-bottom:0}
-h1,.step h2,.book h3,.q .lab,.scale .num,
+h1,.step h2,.book h3,.q .lab,.scale .num{font-family:var(--head)}
 
 /* every control input is hidden; its <label> is the visible row */
 .ci{position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none}
@@ -713,7 +713,8 @@ DLCSS;
         // Multi-selects go to the long table so an implementation rate is a
         // GROUP BY rather than JSON parsing.
         $multi = array(
-            'applied'  => array_keys(self::topics()),
+            // 'none' = "ยังไม่ได้ลองอะไรเลย" — a real answer, not an absence.
+            'applied'  => array_merge(array_keys(self::topics()), array('none')),
             'liked'    => array_keys(self::topics()),
             'add'      => array_keys(self::options('add')),
             'friction' => array_keys(self::options('friction')),

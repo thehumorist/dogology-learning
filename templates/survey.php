@@ -233,12 +233,12 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
           <div class="q qapplied">
             <span class="lab">เรื่องไหนที่คุณเอาไปใช้จริงบ้าง *</span>
             <span class="sub">เลือกได้หลายข้อ</span>
-            <div class="opts">
-              <?php foreach ($topic_opts as $k => $label): ?>
-                <input class="ci" type="checkbox" name="applied[]" value="<?php echo esc_attr($k); ?>" id="t_<?php echo esc_attr($k); ?>"><label class="opt" for="t_<?php echo esc_attr($k); ?>"><i></i><span><?php echo esc_html($label); ?></span></label>
-              <?php endforeach; ?>
-              <input class="ci" type="checkbox" name="applied[]" value="none" id="t_none"><label class="opt" for="t_none"><i></i><span>ยังไม่ได้ลองอะไรเลย</span></label>
-            </div>
+            <?php /* NOTE: no .opts wrapper here — the checkboxes must stay direct
+                     siblings of .bestwrap for the `#t_x:checked ~ .bestwrap` rules. */ ?>
+            <?php foreach ($topic_opts as $k => $label): ?>
+              <input class="ci" type="checkbox" name="applied[]" value="<?php echo esc_attr($k); ?>" id="t_<?php echo esc_attr($k); ?>"><label class="opt" for="t_<?php echo esc_attr($k); ?>"><i></i><span><?php echo esc_html($label); ?></span></label>
+            <?php endforeach; ?>
+            <input class="ci" type="checkbox" name="applied[]" value="none" id="t_none"><label class="opt" for="t_none"><i></i><span>ยังไม่ได้ลองอะไรเลย</span></label>
             <div class="bestwrap">
               <span class="sub2">แล้วเรื่องไหนได้ผลที่สุด *</span>
               <span class="sub">รายการจะขึ้นตามที่ติ๊กไว้ด้านบน</span>
