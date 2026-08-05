@@ -305,8 +305,8 @@ for ($i = 1; $i <= 10; $i++) {
     <section class="panel p1">
       <div class="hero">
         <p class="eyebrow">Dogology 101</p>
-        <h1>ก่อนอื่น <span class="g">เลือกอีบุ๊กฟรี 1 เล่ม</span></h1>
-        <p class="lede">ตอนนี้เรากำลังจะปรับปรุงคอร์สครั้งใหญ่ สิ่งที่ตอบวันนี้จะกำหนดว่าจะเพิ่มอะไรเข้าไปบ้าง ตอบตรง ๆ ได้เลยครับ ไม่ต้องเกรงใจ</p>
+        <h1>แบบสอบถามผู้เรียน <span class="g">คอร์ส Dogology 101</span></h1>
+        <p class="lede">ตอนนี้เรากำลังจะปรับปรุงคอร์ส Dogology 101 ครั้งใหญ่ สิ่งที่คุณตอบวันนี้จะกำหนดว่าจะเพิ่มอะไรเข้าไปบ้าง ตอบตรง ๆ ได้เลยครับ ไม่ต้องเกรงใจ<br><br><b>เริ่มจากเลือกอีบุ๊กที่อยากได้ก่อน 1 เล่ม</b> แล้วตอบคำถามสั้น ๆ ประมาณ 3 นาที ตอบจบแล้วเราจะส่งเล่มที่เลือกให้ทาง LINE ครับ</p>
         <div class="who-strip">
           <div class="av"><?php echo esc_html($initial); ?></div>
           <div class="nm"><b><?php echo esc_html($display_name ?: 'ผู้เรียน'); ?></b><span>เข้าสู่ระบบด้วย LINE อัตโนมัติ</span></div>
@@ -332,6 +332,10 @@ for ($i = 1; $i <= 10; $i++) {
             </label>
           <?php endforeach; ?>
         </div>
+        <?php /* Feedback from a real run: people expected the book to arrive on
+                 selection, and were unclear what the questions would be about.
+                 State both, at the moment they press ถัดไป. */ ?>
+        <p class="fine" style="margin-top:18px">เลือกแล้วกด "ถัดไป" เพื่อตอบคำถามเกี่ยวกับคอร์ส Dogology 101<br>เราจะส่งอีบุ๊กให้ทาง LINE หลังตอบแบบสอบถามจบครับ</p>
       </div>
       <?php $n = $nav(1); dl_srv_nav($n['back'], $n['next'], $n['last']); ?>
     </section>
@@ -342,7 +346,7 @@ for ($i = 1; $i <= 10; $i++) {
         <div class="step"><span class="n">ขั้นที่ 2</span><h2><?php echo $is_unf ? 'อะไรทำให้หยุด' : 'สิ่งที่เอาไปใช้จริง'; ?></h2></div>
         <?php if (!$is_unf): ?>
           <div class="q qapplied">
-            <span class="lab">เรื่องไหนที่คุณเอาไปใช้จริงบ้าง *</span>
+            <span class="lab">จากคอร์ส Dogology 101 เรื่องไหนที่คุณเอาไปใช้จริงบ้าง *</span>
             <span class="sub">เลือกได้หลายข้อ</span>
             <?php /* NOTE: no .opts wrapper here — the checkboxes must stay direct
                      siblings of .bestwrap for the `#t_x:checked ~ .bestwrap` rules. */ ?>
@@ -388,7 +392,7 @@ for ($i = 1; $i <= 10; $i++) {
           </div>
         <?php else: ?>
           <div class="q">
-            <span class="lab">ตอนที่ซื้อคอร์ส คุณคาดหวังว่าจะได้อะไร *</span>
+            <span class="lab">ตอนที่ซื้อคอร์ส Dogology 101 คุณคาดหวังว่าจะได้อะไร *</span>
             <span class="sub">ตอบตามที่คิดตอนนั้นได้เลยครับ</span>
             <textarea name="expectation" rows="5" placeholder="ตอนนั้นคิดว่าจะได้อะไรจากคอร์สนี้"></textarea>
           </div>
@@ -403,7 +407,7 @@ for ($i = 1; $i <= 10; $i++) {
         <div class="step"><span class="n">ขั้นที่ 4</span><h2><?php echo $is_unf ? 'ทางกลับมา' : 'ความคุ้มค่า'; ?></h2></div>
         <?php if (!$is_unf): ?>
           <div class="q">
-            <span class="lab">คอร์สนี้คุ้มค่ากับที่จ่ายไปแค่ไหน *</span>
+            <span class="lab">คอร์ส Dogology 101 คุ้มค่ากับที่จ่ายไปแค่ไหน *</span>
             <div class="scale">
               <?php $caps = array(1 => 'ไม่คุ้ม', 2 => 'คุ้มน้อย', 3 => 'พอใช้', 4 => 'คุ้ม', 5 => 'คุ้มมาก');
               foreach ($caps as $v => $cap): ?>
@@ -427,7 +431,7 @@ for ($i = 1; $i <= 10; $i++) {
       <div class="sec">
         <div class="step"><span class="n">ขั้นที่ 5</span><h2>อยากให้เพิ่มอะไร</h2></div>
         <div class="q">
-          <span class="lab">อยากให้เพิ่มหรือปรับอะไรในคอร์สบ้าง *</span>
+          <span class="lab">อยากให้เพิ่มหรือปรับอะไรในคอร์ส Dogology 101 บ้าง *</span>
           <span class="sub">เลือกได้หลายข้อ</span>
           <?php dl_srv_set('checkbox', 'add[]', 'ad', Dogology_Learning_Survey::options('add')); ?>
           <textarea name="add_other" rows="3" style="margin-top:8px" placeholder="ถ้าเลือกอื่น ๆ หรืออยากขยายความ เขียนตรงนี้ได้เลย"></textarea>
@@ -441,7 +445,7 @@ for ($i = 1; $i <= 10; $i++) {
       <div class="sec">
         <div class="step"><span class="n">ขั้นที่ 6</span><h2>ผลลัพธ์กับหมา</h2></div>
         <div class="q">
-          <span class="lab">อะไรที่เรียนจากในคอร์สแล้วช่วยให้หมาของคุณเปลี่ยนไปบ้าง เล่าให้ฟังหน่อย หรือไม่เปลี่ยนไปเลยก็บอกได้</span>
+          <span class="lab">อะไรที่เรียนจากคอร์ส Dogology 101 แล้วช่วยให้หมาของคุณเปลี่ยนไปบ้าง เล่าให้ฟังหน่อย หรือไม่เปลี่ยนไปเลยก็บอกได้</span>
           <span class="sub">เล่าเป็นเหตุการณ์ก็ได้ครับ เช่น เมื่อก่อนเป็นแบบไหน ตอนนี้เป็นแบบไหน</span>
           <textarea name="outcome" rows="5" placeholder="ยิ่งเล่าละเอียด ยิ่งช่วยเราได้มาก"></textarea>
         </div>
@@ -479,7 +483,7 @@ for ($i = 1; $i <= 10; $i++) {
       <div class="sec">
         <div class="step"><span class="n">ขั้นที่ 9</span><h2>ให้คะแนนโดยรวม</h2></div>
         <div class="q">
-          <span class="lab" style="text-align:center">ให้คะแนนคอร์สนี้โดยรวม *</span>
+          <span class="lab" style="text-align:center">ให้คะแนนคอร์ส Dogology 101 โดยรวม *</span>
           <div class="starbox">
             <div class="stars">
               <?php foreach (array(5, 4, 3, 2, 1) as $v): ?>
