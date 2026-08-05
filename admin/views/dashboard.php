@@ -171,6 +171,73 @@ foreach ($courses as $course) {
     ];
 }
 
+/**
+ * Per-lesson completion, in curriculum order, for every course that has both
+ * lessons and students.
+ *
+ * READ AS DROP-OFF, NOT POPULARITY. In a linear course the raw count only
+ * measures how far people got, so lesson 1 always "wins" and the last lesson
+ * always looks worst. The actionable signal is `drop` — the fall from the
+ * previous lesson. A big drop marks where students quit; a near-zero drop late
+ * in the course marks a lesson that holds attention. A NEGATIVE drop means more
+ * students completed this lesson than the one before it — they skipped ahead to
+ * reach it, which is its own signal of pull.
+ */
+$lesson_breakdown = [];
+if (class_exists('Dogology_Learning_Builder')) {
+    foreach ($course_stats as $stat) {
+        if ($stat['total_lessons'] < 1 || $stat['enrolled'] < 1) {
+            continue;
+        }
+
+        $counts = [];
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT lesson_id, COUNT(DISTINCT user_id) AS done
+             FROM $table_progress
+             WHERE course_id = %d AND lesson_id > 0 AND completed = 1
+             GROUP BY lesson_id",
+            $stat['id']
+        ));
+        foreach ($rows as $row) {
+            $counts[(int) $row->lesson_id] = (int) $row->done;
+        }
+
+        $items = [];
+        $prev  = null;
+        $pos   = 0;
+        foreach (Dogology_Learning_Builder::build_tree($stat['id']) as $node) {
+            foreach ($node['lessons'] as $lesson) {
+                $done = $counts[(int) $lesson->ID] ?? 0;
+                $items[] = [
+                    'pos'    => ++$pos,
+                    'module' => $node['module']->post_title,
+                    'title'  => $lesson->post_title,
+                    'done'   => $done,
+                    'pct'    => $stat['enrolled'] > 0 ? ($done / $stat['enrolled']) * 100 : 0,
+                    'drop'   => $prev === null ? null : $prev - $done,
+                ];
+                $prev = $done;
+            }
+        }
+
+        if ($items) {
+            // Biggest single drop, so it can be called out rather than hunted for.
+            $worst = null;
+            foreach ($items as $item) {
+                if ($item['drop'] !== null && ($worst === null || $item['drop'] > $worst['drop'])) {
+                    $worst = $item;
+                }
+            }
+            $lesson_breakdown[] = [
+                'course'   => $stat['name'],
+                'enrolled' => $stat['enrolled'],
+                'items'    => $items,
+                'worst'    => $worst,
+            ];
+        }
+    }
+}
+
 // Bucket display config, in order. Colour runs cold (dropped off) to warm
 // (nearly there) to teal (done), matching the palette already on this screen.
 $bucket_labels = [
@@ -336,6 +403,77 @@ $bucket_labels = [
             <?php endif; ?>
         </div>
     </div>
+
+    <!-- Lesson-by-Lesson Drop-off -->
+    <?php foreach ($lesson_breakdown as $course_block): ?>
+    <div class="dl-card" style="margin-bottom: 20px;">
+        <div class="dl-card-header">
+            <h3 class="dl-card-title">
+                Lesson-by-Lesson — <?php echo esc_html($course_block['course']); ?>
+            </h3>
+        </div>
+        <?php if ($course_block['worst'] && $course_block['worst']['drop'] > 0): ?>
+        <p style="margin:0; padding:12px 16px; background:#fffbeb; border-bottom:1px solid #fde68a; font-size:13px;">
+            Biggest drop-off: <strong><?php echo esc_html($course_block['worst']['title']); ?></strong>
+            (lesson <?php echo (int) $course_block['worst']['pos']; ?>) —
+            <strong><?php echo number_format($course_block['worst']['drop']); ?></strong>
+            students stopped here rather than continuing from the previous lesson.
+        </p>
+        <?php endif; ?>
+        <table class="dl-table">
+            <thead>
+                <tr>
+                    <th style="width:34px;">#</th>
+                    <th>Lesson</th>
+                    <th>Module</th>
+                    <th style="width:220px;">Completed</th>
+                    <th style="text-align:right;">Students</th>
+                    <th style="text-align:right;">Drop</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($course_block['items'] as $item): ?>
+                <tr>
+                    <td style="color:#999;"><?php echo (int) $item['pos']; ?></td>
+                    <td><?php echo esc_html($item['title']); ?></td>
+                    <td style="color:#999; font-size:12px;"><?php echo esc_html($item['module']); ?></td>
+                    <td>
+                        <div style="background:#f1f5f9; border-radius:3px; height:16px;">
+                            <div style="width:<?php echo esc_attr(round($item['pct'], 2)); ?>%; background:#00AB8E; height:100%; border-radius:3px;"></div>
+                        </div>
+                    </td>
+                    <td style="text-align:right;">
+                        <strong><?php echo number_format($item['done']); ?></strong>
+                        <span style="color:#999;">(<?php echo esc_html(round($item['pct'], 1)); ?>%)</span>
+                    </td>
+                    <td style="text-align:right;">
+                        <?php if ($item['drop'] === null): ?>
+                            <span style="color:#ccc;">—</span>
+                        <?php elseif ($item['drop'] > 0): ?>
+                            <span style="color:<?php echo $item['drop'] >= 10 ? '#dc2626' : '#f59e0b'; ?>;">
+                                &#8595;<?php echo number_format($item['drop']); ?>
+                            </span>
+                        <?php elseif ($item['drop'] < 0): ?>
+                            <span style="color:#00AB8E;" title="More students completed this than the previous lesson — they skipped ahead to it">
+                                &#8593;<?php echo number_format(abs($item['drop'])); ?>
+                            </span>
+                        <?php else: ?>
+                            <span style="color:#999;">0</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        <p style="padding: 10px 16px 14px; margin: 0; color:#999; font-size:12px;">
+            Read the <strong>Drop</strong> column, not the raw counts. In a linear course the count only
+            measures how far people got, so lesson 1 always leads. A large drop marks where students quit;
+            a small drop late in the course marks a lesson that holds attention. An
+            <span style="color:#00AB8E;">&#8593;up arrow</span> means more students completed that lesson
+            than the one before it — they skipped ahead to reach it.
+        </p>
+    </div>
+    <?php endforeach; ?>
 
     <!-- Recent Activity Table -->
     <div class="dl-card">
