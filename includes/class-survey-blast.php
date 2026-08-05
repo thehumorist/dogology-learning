@@ -401,6 +401,38 @@ class Dogology_Learning_Survey_Blast
             $url = home_url($path);
         }
 
+        // Preferred path: render through the commerce email shell — the same
+        // wrapper every order confirmation uses, and the only one proven across
+        // the clients our customers actually run. Hand-rolling a second shell
+        // is how the first two attempts arrived unstyled.
+        if (class_exists('Dogology_Commerce_Orders_API')
+            && method_exists('Dogology_Commerce_Orders_API', 'get_email_template')) {
+
+            $inner = '';
+            foreach (preg_split("/\n\n+/", $c['body']) as $p) {
+                $inner .= "<p style='font-size:16px;line-height:1.7;color:#555555;margin:0 0 16px;'>"
+                        . nl2br(esc_html($p)) . "</p>";
+            }
+            $inner .= "<div style='text-align:center;margin:35px 0 12px;'>"
+                    . "<a href='" . esc_url($url) . "' style='background-color:" . esc_attr($c['c2'])
+                    . ";color:#ffffff;padding:14px 30px;text-decoration:none;border-radius:50px;"
+                    . "font-weight:bold;display:inline-block;'>" . esc_html($c['cta']) . "</a></div>";
+            $inner .= "<p style='font-size:13px;color:#999999;text-align:center;margin:0 0 24px;'>"
+                    . esc_html($c['note']) . "</p>";
+            $inner .= "<p style='font-size:13px;color:#999999;text-align:center;margin:0;'>"
+                    . "หากปุ่มไม่ทำงาน สามารถคลิกที่ลิงก์นี้:<br>"
+                    . "<a href='" . esc_url($url) . "' style='color:#00AB8E;word-break:break-all;'>"
+                    . esc_html($url) . "</a></p>";
+
+            // The flex hero/sub become the heading; the shell renders it.
+            $heading = $c['hero'] . ' ' . $c['sub'];
+            return array(
+                'subject' => $c['title'],
+                'html'    => Dogology_Commerce_Orders_API::get_email_template($heading, $inner),
+            );
+        }
+
+        // Fallback shell, used only if commerce is inactive.
         // TABLE layout with bgcolor attributes, not styled <div>s. Mail clients
         // routinely drop background-color from a div and then auto-scale the
         // text, which is exactly how the first version arrived: no header band,
