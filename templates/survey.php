@@ -494,6 +494,15 @@ for ($i = 1; $i <= 10; $i++) {
     <section class="panel p10">
       <div class="sec">
         <div class="step"><span class="n">ขั้นสุดท้าย</span><h2>ปิดท้าย</h2></div>
+        <?php
+        /**
+         * The testimonial ask (consent + dog name + photo) is for people who
+         * got something out of the course. Asking someone who stopped at
+         * lesson three to let us tell their story — and to send a photo of
+         * their dog — right after they told us where we failed them reads as
+         * tone-deaf, and would produce testimonials we could not use anyway.
+         */
+        if (!$is_unf): ?>
         <div class="q">
           <span class="lab">เรื่องของน้องอาจช่วยเจ้าของคนอื่นได้</span>
           <span class="sub">เจ้าของหลายคนกำลังเจอปัญหาแบบเดียวกับที่คุณเคยเจอ สิ่งที่คุณเล่ามาอาจเป็นสิ่งที่เขากำลังตามหาอยู่ครับ</span>
@@ -515,8 +524,14 @@ for ($i = 1; $i <= 10; $i++) {
             </div>
           </div>
         </div>
+        <?php else: ?>
+        <div class="q">
+          <span class="lab">ขอบคุณที่สละเวลาบอกเราครับ</span>
+          <span class="sub">สิ่งที่คุณเล่ามาจะถูกอ่านจริง ๆ และจะถูกใช้ตัดสินใจว่าจะปรับอะไรก่อนครับ</span>
+        </div>
+        <?php endif; ?>
         <p class="fine"><?php echo $is_unf
-          ? 'ขอบคุณที่สละเวลาตอบครับ'
+          ? 'กดส่งคำตอบได้เลยครับ'
           : 'กดส่งแล้วเราจะส่งอีบุ๊กให้ทาง LINE ครับ'; ?></p>
       </div>
       <?php $n = $nav(10); dl_srv_nav($n['back'], 0, true); ?>
