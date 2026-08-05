@@ -89,7 +89,12 @@ function dl_srv_nav($back, $next, $submit = false)
  * live sequence. Hard-coding them is how a "next" button ends up pointing at a
  * page that is hidden for this student.
  */
-$seq = $is_unf ? array(1, 2, 3, 4, 5, 6, 8, 10) : array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+// Panel 1 is the ebook picker, so it belongs ONLY to the segments that are
+// actually granted a book (finished / near — see Survey::EBOOK_SEGMENTS). It
+// used to be in both sequences, so a stalled student was shown the picker,
+// told "กดส่งแล้วเราจะส่งอีบุ๊กให้" and then refused by the server-side gate —
+// a promise the invite itself never made.
+$seq = $is_unf ? array(2, 3, 4, 5, 6, 8, 10) : array(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 $nav = function ($n) use ($seq) {
     $i = array_search($n, $seq, true);
     if ($i === false) return array('back' => 0, 'next' => 0, 'last' => false, 'skip' => true);
@@ -193,7 +198,12 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
       </script>
       <?php endif; ?>
     <?php else: ?>
-      <p>ขอบคุณที่สละเวลาตอบนะครับ<br>เราจะส่งอีบุ๊กให้ทาง LINE เร็ว ๆ นี้</p>
+      <?php /* Only promise a book to someone who is actually getting one. */ ?>
+      <?php if ($ctx && !$ctx['is_unfinished']): ?>
+        <p>ขอบคุณที่สละเวลาตอบนะครับ<br>เราจะส่งอีบุ๊กให้ทาง LINE เร็ว ๆ นี้</p>
+      <?php else: ?>
+        <p>ขอบคุณที่สละเวลาตอบนะครับ<br>สิ่งที่คุณเล่ามาจะถูกใช้ปรับปรุงคอร์สจริง ๆ ครับ</p>
+      <?php endif; ?>
     <?php endif; ?>
   </div>
 
@@ -493,7 +503,9 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
             </div>
           </div>
         </div>
-        <p class="fine">กดส่งแล้วเราจะส่งอีบุ๊กให้ทาง LINE ครับ</p>
+        <p class="fine"><?php echo $is_unf
+          ? 'ขอบคุณที่สละเวลาตอบครับ'
+          : 'กดส่งแล้วเราจะส่งอีบุ๊กให้ทาง LINE ครับ'; ?></p>
       </div>
       <?php $n = $nav(10); dl_srv_nav($n['back'], 0, true); ?>
     </section>
@@ -546,7 +558,11 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(out)
     }).then(function (r) { return r.json(); }).then(function (j) {
-      if (j && j.ok) { location.href = '<?php echo esc_url_raw(home_url('/101-survey/?done=1')); ?>'; }
+      // 'duplicate' means the answers ARE saved — treat it as success rather
+      // than sending the student round a retry loop that can only repeat.
+      if (j && (j.ok || j.error === 'duplicate')) {
+        location.href = '<?php echo esc_url_raw(home_url('/101-survey/?done=1')); ?>';
+      }
       else { form.classList.remove('sending'); alert((j && j.message) || 'ส่งไม่สำเร็จ ลองใหม่อีกครั้งครับ'); }
     }).catch(function () {
       form.classList.remove('sending'); alert('ส่งไม่สำเร็จ ลองใหม่อีกครั้งครับ');

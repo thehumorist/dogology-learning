@@ -703,6 +703,16 @@ DLCSS;
     }
 
     /** Persist one submission. Returns response id, or WP_Error. */
+    /** @return string|null best_topic, only if the student also ticked it in `applied`. */
+    protected static function best_topic(array $payload)
+    {
+        $best = self::in_registry($payload, 'best_topic', array_keys(self::topics()));
+        if ($best === null) return null;
+        $applied = isset($payload['applied']) && is_array($payload['applied'])
+            ? array_map('sanitize_key', $payload['applied']) : array();
+        return in_array($best, $applied, true) ? $best : null;
+    }
+
     /** @return string|null The value only if it is a known key. */
     protected static function in_registry(array $payload, $field, array $valid)
     {
@@ -718,8 +728,12 @@ DLCSS;
      */
     protected static function raw_json(array $payload)
     {
+        // Plumbing never gets archived: the nonce is a credential, and the rest
+        // are navigation/preview machinery that would only confuse an export.
+        $drop = array('t', 'wz', 'pv', 'pvs', 'dl_survey_nonce', '_wp_http_referer', 'photo_attachment_id');
         $flat = array();
         foreach ($payload as $k => $v) {
+            if (in_array($k, $drop, true)) continue;
             $k = substr(sanitize_key((string) $k), 0, 48);
             if ($k === '') continue;
             if (is_array($v)) {
@@ -803,7 +817,11 @@ DLCSS;
             // Checked against the registries, not just sanitised: these are
             // client-supplied, feed reporting and the ebook grant, and anything
             // over 64 chars would have overflowed the column.
-            'best_topic'              => self::in_registry($payload, 'best_topic', array_keys(self::topics())),
+            // Reconciled against `applied`: un-ticking a topic hides its
+            // best-topic radio but leaves it checked, so a student who changed
+            // their mind could submit a "most effective" topic they never said
+            // they tried — corrupting the exact cross-tab this survey exists for.
+            'best_topic'              => self::best_topic($payload),
             'best_reason'             => $txt('best_reason'),
             'expectation'             => $txt('expectation'),
             'outcome'                 => $txt('outcome'),
@@ -908,7 +926,18 @@ DLCSS;
             current_time('mysql'), self::SURVEY_KEY, (int) $user_id
         ));
 
-        $grant = self::grant_ebook((int) $response_id, $segment);
+        // Delivery must never take down a submission that is already saved.
+        // grant_ebook() calls into commerce and fires listeners; a fatal there
+        // used to surface as a REST 500, so the student saw "ส่งไม่สำเร็จ",
+        // retried, hit 'duplicate', and never reached the download screen —
+        // while their answers sat safely in the table the whole time.
+        try {
+            $grant = self::grant_ebook((int) $response_id, $segment);
+        } catch (\Throwable $e) {
+            error_log('[dogology-survey] grant threw for response ' . (int) $response_id
+                . ': ' . $e->getMessage());
+            return;
+        }
         if (is_wp_error($grant)) {
             // Admin still shows "ยังไม่ได้ส่ง" for this row; the log says why.
             error_log('[dogology-survey] ebook grant skipped for response '
@@ -1023,7 +1052,18 @@ DLCSS;
              WHERE o.id = %d", $order_id
         ));
         if ($full) {
-            do_action('dogology_order_approved', $order_id, $full, 'paid');
+            // Call the entitlement listener DIRECTLY rather than firing
+            // dogology_order_approved. That action is bridged to the platform
+            // event bus as 'order.paid', which fans out to GA4 Measurement
+            // Protocol and Meta CAPI — so every giveaway was injecting a
+            // zero-value Purchase into the conversion data the ad algorithm
+            // learns from (telemetry confirmed it for SG-1 and SG-2). It also
+            // reaches the GCal listener, which has no business here.
+            // Access is what we actually want; nothing else on that hook is.
+            if (class_exists('Dogology_Learning_Integration_Commerce')) {
+                $integration = new Dogology_Learning_Integration_Commerce();
+                $integration->handle_order_approved($order_id, $full, 'paid');
+            }
         }
 
         if (class_exists('Dogology_Commerce_Orders_API')) {
@@ -1182,13 +1222,20 @@ DLCSS;
     protected static function maybe_handle_post()
     {
         if (empty($_SERVER['REQUEST_METHOD']) || $_SERVER['REQUEST_METHOD'] !== 'POST') return;
-        if (empty($_POST['dl_survey_nonce'])
-            || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['dl_survey_nonce'])), 'dl_survey_submit')) {
-            return; // stale page — fall through and re-render rather than 403
-        }
-
+        // Identity first. The signed token IS the credential here and it is
+        // verified independently; the nonce only guards against a cross-site
+        // POST. Bailing on a stale nonce threw away ten screens of answers —
+        // the exact failure this handler was written to prevent — and WP
+        // nonces expire in 12–24h, which a link opened in a LINE webview and
+        // submitted the next morning will hit.
         $user_id = self::actor(isset($_POST['t']) ? sanitize_text_field(wp_unslash($_POST['t'])) : '');
         if (!$user_id) return;
+
+        $nonce_ok = !empty($_POST['dl_survey_nonce'])
+            && wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['dl_survey_nonce'])), 'dl_survey_submit');
+        // No nonce AND no token would be an unauthenticated cross-site post.
+        // With a valid token we know who this is, so accept the answers.
+        if (!$nonce_ok && empty($_POST['t'])) return;
 
         // The wizard's own state radio is navigation, not an answer; `t` is a
         // credential, not one either.
@@ -1270,7 +1317,13 @@ DLCSS;
         if (!$user_id) {
             return new WP_REST_Response(array('ok' => false, 'error' => 'not_logged_in'), 401);
         }
-        unset($payload['t']);           // credential, not an answer
+        // Credentials and form plumbing, not answers — and the nonce in
+        // particular must not be archived into raw_json, which gets exported.
+        // NOTE: pv/pvs stay — effective_segment() needs them to decide whether
+        // the ebook picker the student saw was legitimate. raw_json() strips
+        // them, along with the nonce, before anything is archived.
+        unset($payload['t'], $payload['wz'], $payload['dl_survey_nonce'],
+              $payload['_wp_http_referer']);
         $res = self::store($user_id, $payload);
         if (is_wp_error($res)) {
             return new WP_REST_Response(array('ok' => false, 'error' => $res->get_error_code(),

@@ -58,8 +58,12 @@ class Dogology_Learning_Survey_Blast
 
     public static function boot()
     {
-        add_action(self::TICK_HOOK, array(__CLASS__, 'tick'));
+        // accepted_args 1: the chain passes a unique arg to defeat cron dedup.
+        add_action(self::TICK_HOOK, array(__CLASS__, 'tick'), 10, 1);
         add_action(self::AUTO_HOOK, array(__CLASS__, 'auto_scan'));
+        // Safety net, independent of the auto-send toggle: if the chain ever
+        // dies, the hourly scan re-arms a queue that still has work.
+        add_action(self::AUTO_HOOK, array(__CLASS__, 'rescue_queue'));
         if (!wp_next_scheduled(self::AUTO_HOOK)) {
             wp_schedule_event(time() + 600, 'hourly', self::AUTO_HOOK);
         }
@@ -99,7 +103,13 @@ class Dogology_Learning_Survey_Blast
         $map = array();
         $rows = $wpdb->get_results(
             "SELECT id, line_uid FROM {$wpdb->prefix}dogology_users WHERE line_uid <> ''", ARRAY_A);
-        foreach ($rows as $r) $map[(int) $r['id']] = $r['line_uid'];
+        foreach ($rows as $r) {
+            // Shape-check, not just non-empty: one live record holds "f", which
+            // was picked as the send channel and could only ever 400 — and the
+            // student has a perfectly good email we were skipping.
+            if (!preg_match('/^U[0-9a-f]{32}$/i', (string) $r['line_uid'])) continue;
+            $map[(int) $r['id']] = $r['line_uid'];
+        }
         return $map;
     }
 
@@ -213,6 +223,29 @@ class Dogology_Learning_Survey_Blast
     {
         global $wpdb;
         return (int) $wpdb->get_var("SELECT COUNT(*) FROM " . self::table() . " WHERE status='failed'");
+    }
+    /**
+     * Rows claimed for sending that never reached a terminal state — the
+     * process died between the claim and the status write. Without this they
+     * are invisible (no count includes them), unsendable (retry only looked at
+     * 'failed'), and they stop the tick chain, which keys on pending only.
+     */
+    public static function stale_sending_count()
+    {
+        global $wpdb;
+        return (int) $wpdb->get_var(
+            "SELECT COUNT(*) FROM " . self::table() . "
+             WHERE status='sending' AND scheduled_for < DATE_SUB(NOW(), INTERVAL 10 MINUTE)");
+    }
+
+    /** Re-queue anything stranded, and re-arm the chain if work remains. */
+    public static function rescue_queue()
+    {
+        global $wpdb;
+        $wpdb->query(
+            "UPDATE " . self::table() . " SET status='pending'
+             WHERE status='sending' AND scheduled_for < DATE_SUB(NOW(), INTERVAL 10 MINUTE)");
+        if (self::pending_count() > 0) self::schedule_tick();
     }
 
     /**
@@ -528,11 +561,23 @@ class Dogology_Learning_Survey_Blast
              . '-' . substr($h, 16, 4) . '-' . substr($h, 20, 12);
     }
 
-    public static function tick()
+    public static function tick($chain_id = '')
     {
         global $wpdb;
         $t = self::table();
         if (!$wpdb->get_var("SELECT GET_LOCK('dogology_survey_tick', 0)")) return;
+
+        // Arm the NEXT tick before sending anything. If PHP dies mid-batch
+        // (a 20-row loop at a 10s push timeout can need 200s of wall clock,
+        // well past a cron loopback's max_execution_time) the chain must not
+        // die with it — the old code scheduled at the end, so one death left
+        // the queue stopped forever with no symptom but a stalled counter.
+        // The unique arg defeats WP's 10-minute identical-event dedup.
+        // Mirrors dogology-mindmap's M4 blast, which learned this the hard way.
+        if (self::pending_count() > 0) {
+            wp_schedule_single_event(time() + 120, self::TICK_HOOK, array(uniqid('dlsv', true)));
+        }
+
         try {
             $rows = $wpdb->get_results($wpdb->prepare(
                 "SELECT * FROM $t WHERE status='pending' ORDER BY id ASC LIMIT %d", self::BATCH_SIZE
@@ -556,17 +601,32 @@ class Dogology_Learning_Survey_Blast
                     $wpdb->update($t, array('status' => 'sent', 'sent_at' => current_time('mysql'), 'error' => null),
                         array('id' => $r->id, 'status' => 'sending'));
                 } else {
-                    $wpdb->update($t, array('status' => 'failed',
-                        'error' => substr((string) ($res['error'] ?? 'push failed'), 0, 500)),
+                    // A LINE push that fails for a recipient who also has an
+                    // email is not a dead end — fall back rather than losing
+                    // them. (One live record holds line_uid "f": non-empty, so
+                    // it was chosen as the channel, and it can only ever 400.)
+                    $err = substr((string) ($res['error'] ?? 'push failed'), 0, 500);
+                    if (($r->channel ?? 'line') === 'line' && $r->email && is_email($r->email)) {
+                        $res2 = self::send_email($r->email, $seg, (int) $r->user_id);
+                        if (!empty($res2['ok'])) {
+                            $wpdb->update($t, array(
+                                'status'  => 'sent',
+                                'channel' => 'email',
+                                'sent_at' => current_time('mysql'),
+                                'error'   => 'line failed (' . $err . ') — sent by email',
+                            ), array('id' => $r->id, 'status' => 'sending'));
+                            continue;
+                        }
+                    }
+                    $wpdb->update($t, array('status' => 'failed', 'error' => $err),
                         array('id' => $r->id));
                 }
             }
         } finally {
             $wpdb->query("SELECT RELEASE_LOCK('dogology_survey_tick')");
         }
-        if (self::pending_count() > 0) {
-            wp_schedule_single_event(time() + 120, self::TICK_HOOK);
-        }
+        // The chain was already armed at the top of this tick. Nothing to do
+        // here — re-arming would double the cadence.
     }
 
     /**

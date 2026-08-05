@@ -46,10 +46,16 @@ if (!empty($_POST['dl_survey_nonce']) && wp_verify_nonce($_POST['dl_survey_nonce
 
     if ($action === 'retry') {
         global $wpdb;
+        // Also recover rows stranded in 'sending' — the process died between
+        // the claim and the status write, so they were never sent and, before
+        // this, could never be retried. The per-row retry key means LINE
+        // dedupes any genuine redelivery for 24h, so this is safe.
         $wpdb->query("UPDATE " . Dogology_Learning_Survey_Blast::table() . "
-                      SET status='pending', error=NULL WHERE status='failed'");
+                      SET status='pending', error=NULL
+                      WHERE status='failed'
+                         OR (status='sending' AND scheduled_for < DATE_SUB(NOW(), INTERVAL 10 MINUTE))");
         Dogology_Learning_Survey_Blast::schedule_tick();
-        $notice = 'คิวส่งใหม่สำหรับรายการที่ล้มเหลวแล้ว';
+        $notice = 'คิวส่งใหม่สำหรับรายการที่ล้มเหลวและที่ค้างอยู่แล้ว';
     }
 }
 
@@ -59,7 +65,8 @@ $auto_on  = Dogology_Learning_Survey_Blast::auto_enabled();
 $delay_h  = Dogology_Learning_Survey_Blast::auto_delay_h();
 $pending  = Dogology_Learning_Survey_Blast::pending_count();
 $sent     = Dogology_Learning_Survey_Blast::sent_count();
-$failed   = Dogology_Learning_Survey_Blast::failed_count();
+$failed   = Dogology_Learning_Survey_Blast::failed_count()
+          + Dogology_Learning_Survey_Blast::stale_sending_count(); // stranded rows count as retryable
 $rt       = Dogology_Learning_Survey::responses_table();
 $at       = Dogology_Learning_Survey::answers_table();
 $total    = (int) $wpdb->get_var("SELECT COUNT(*) FROM $rt");
