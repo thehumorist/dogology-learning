@@ -395,6 +395,37 @@ textarea,input[type=text]{background:#fff}
 .sending{opacity:.55;pointer-events:none}
 .prog .row{display:none}
 
+
+/* ==========================================================================
+   CORRECTIVE LAYER — appended last so it wins.
+   The base stylesheet was lifted out of the design mock by regex, and that
+   extraction damaged the @media (min-width:1040px) wrapper: its desktop rules
+   leaked out and applied at every width. `.shell` became a two-column grid
+   with a fixed 340px track on a 375px phone, which pushed the whole page
+   sideways. `.opts` and `.bestwrap` lost their rules altogether.
+   Everything below restores mobile-first behaviour explicitly.
+   ========================================================================== */
+.shell{display:block;max-width:none;margin:0;padding:0}
+.form{background:transparent;border:0;border-radius:0;overflow:visible}
+.opts{display:flex;flex-direction:column;gap:8px}
+.bestwrap{display:flex;flex-direction:column;background:rgba(0,171,142,.06);
+  border:1px solid rgba(0,171,142,.2);border-radius:12px;padding:14px 13px;margin-top:16px}
+.bestwrap .opt,.subq .opt{background:#fff}
+.panel{flex-direction:column;min-height:calc(100svh - 4px)}
+.q{display:flex;flex-direction:column;margin-bottom:26px}
+.books{display:grid;grid-template-columns:1fr;gap:10px}
+.sec{padding:20px var(--pad) 4px}
+img{max-width:100%;height:auto}
+body{overflow-x:hidden}
+
+@media (min-width:1040px){
+  .shell{max-width:720px;margin:0 auto;padding:28px 20px 60px}
+  .form{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  .panel{min-height:0}
+  .nav{position:static;margin-top:24px}
+  .books{grid-template-columns:repeat(2,1fr);gap:14px}
+}
+
 DLCSS;
     }
 
