@@ -734,13 +734,29 @@ DLCSS;
         return strlen($json) > 60000 ? substr($json, 0, 60000) : $json;
     }
 
-    /** @return int|null Attachment id if this student uploaded it, else null. */
+    /**
+     * @return int|null Attachment id if this student uploaded it AND consented
+     *                  to us using their answers, else null.
+     *
+     * The photo sits beside the consent checkbox but was stored independently,
+     * so a photo could be attached to a response we are not allowed to publish.
+     * A picture of someone's dog is the most personal thing this form collects;
+     * it should never outlive the permission. Without consent the upload is
+     * deleted outright rather than kept unreferenced.
+     */
     protected static function own_attachment(array $payload, $user_id)
     {
         $id = isset($payload['photo_attachment_id']) ? (int) $payload['photo_attachment_id'] : 0;
         if ($id <= 0) return null;
+
         $owner = (int) get_post_meta($id, '_dl_survey_student', true);
-        return ($owner === (int) $user_id) ? $id : null;
+        if ($owner !== (int) $user_id) return null;
+
+        if (empty($payload['consent_testimonial'])) {
+            wp_delete_attachment($id, true);
+            return null;
+        }
+        return $id;
     }
 
     public static function store($user_id, array $payload)

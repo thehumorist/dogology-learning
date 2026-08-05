@@ -213,9 +213,19 @@ class Dogology_Ebook
             }
         }
 
-        $post = get_post($course_id);
-        $slug = $post && $post->post_name ? $post->post_name : ('dogology-ebook-' . $course_id);
-        self::send_file($cache, $slug . '.pdf');
+        // The download name is what lands in the reader's Files app, so prefer
+        // the course TITLE over the slug — the Watchdog book was shipping as
+        // "test-2.pdf" purely because that is its slug.
+        $post  = get_post($course_id);
+        $title = $post && trim($post->post_title) !== '' ? trim($post->post_title) : '';
+        if ($title === '') {
+            $title = $post && $post->post_name ? $post->post_name : ('dogology-ebook-' . $course_id);
+        }
+        // Strip only what a filesystem objects to. Thai is fine — it rides in
+        // the RFC 5987 filename* parameter that send_file() now emits.
+        $title = preg_replace('#[/\\\\:*?"<>|]+#u', '', $title);
+        $title = trim(preg_replace('/\s+/u', ' ', $title));
+        self::send_file($cache, $title . '.pdf');
     }
 
     /** FPDI/tFPDF import + per-page footer stamp. Atomic write (tmp + rename). */
@@ -294,7 +304,15 @@ class Dogology_Ebook
         if (!headers_sent()) {
             nocache_headers();
             header('Content-Type: application/pdf');
-            header('Content-Disposition: attachment; filename="' . rawurlencode($filename) . '"');
+            // Two forms, per RFC 6266: a plain ASCII fallback for old clients,
+            // and filename* for the real (possibly Thai) name. The previous
+            // single rawurlencode'd form made every client show the percent-
+            // escaped bytes as the filename once the name stopped being ASCII.
+            $ascii = preg_replace('/[^A-Za-z0-9._-]+/', '-', $filename);
+            $ascii = trim($ascii, '-');
+            if ($ascii === '' || $ascii === '.pdf') $ascii = 'dogology-ebook.pdf';
+            header('Content-Disposition: attachment; filename="' . $ascii . '"; '
+                . "filename*=UTF-8''" . rawurlencode($filename));
             header('Content-Length: ' . filesize($path));
             header('X-Robots-Tag: noindex, nofollow');
             header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');

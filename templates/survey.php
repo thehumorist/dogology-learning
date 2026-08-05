@@ -482,7 +482,7 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
               <input type="text" name="dog_name" placeholder="เช่น ข้าวปั้น">
             </div>
             <div style="margin-top:12px">
-              <span class="sub">รูปน้อง (ถ้ามี)</span>
+              <span class="sub">รูปน้อง (ถ้ามี) — ใช้เมื่อติ๊กยินยอมด้านบนเท่านั้นครับ</span>
               <input class="ci" type="file" id="dogphoto" name="dog_photo" accept="image/*">
               <label class="photopick" for="dogphoto">
                 <img id="dogphoto-preview" alt="">
