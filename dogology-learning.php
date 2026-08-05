@@ -3,7 +3,7 @@
  * Plugin Name: Dogology Learning
  * Plugin URI:  https://dogology.org
  * Description: The core learning platform for Dogology. Manages courses, students (custom auth), and progress tracking.
- * Version:     1.5.16
+ * Version:     1.6.0
  * Author:      Dogology Dev
  * Text Domain: dogology-learning
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('DOGOLOGY_LEARNING_VERSION', '1.5.16');
+define('DOGOLOGY_LEARNING_VERSION', '1.6.0');
 define('DOGOLOGY_LEARNING_PATH', plugin_dir_path(__FILE__));
 define('DOGOLOGY_LEARNING_URL', plugin_dir_url(__FILE__));
 
@@ -67,6 +67,10 @@ require_once DOGOLOGY_LEARNING_PATH . 'includes/class-helpers.php';
 require_once DOGOLOGY_LEARNING_PATH . 'includes/class-data.php';
 require_once DOGOLOGY_LEARNING_PATH . 'includes/class-integration-commerce.php';
 require_once DOGOLOGY_LEARNING_PATH . 'includes/class-ebook.php';
+require_once DOGOLOGY_LEARNING_PATH . 'includes/class-survey.php';
+require_once DOGOLOGY_LEARNING_PATH . 'includes/class-survey-blast.php';
+Dogology_Learning_Survey::boot();
+Dogology_Learning_Survey_Blast::boot();
 
 // Admin-only classes — skip on frontend requests
 if (is_admin()) {

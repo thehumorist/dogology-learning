@@ -86,6 +86,15 @@ class Dogology_Learning_DB_Installer
         dbDelta($sql_progress);
         dbDelta($sql_logins);
 
+        // Completion-survey tables live with their own classes so the schema
+        // sits next to the code that reads it.
+        if (class_exists('Dogology_Learning_Survey')) {
+            Dogology_Learning_Survey::install();
+        }
+        if (class_exists('Dogology_Learning_Survey_Blast')) {
+            Dogology_Learning_Survey_Blast::install();
+        }
+
         // Stamp version on first install so plugins_loaded's upgrade path becomes a no-op.
         update_option('dogology_learning_db_version', DOGOLOGY_LEARNING_VERSION);
     }

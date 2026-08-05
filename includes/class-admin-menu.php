@@ -65,6 +65,16 @@ class Dogology_Learning_Admin_Menu
         // Their render methods and admin/views/{modules,lessons}.php went with
         // them — 616 lines of editor that could still write to live courses.
 
+        // Submenu: Completion Survey
+        add_submenu_page(
+            'dogology-learning',
+            'Completion Survey',
+            'Survey',
+            'manage_options',
+            'dogology-learning-survey',
+            array($this, 'render_survey_page')
+        );
+
         // Submenu: Settings
         add_submenu_page(
             'dogology-learning',
@@ -74,6 +84,11 @@ class Dogology_Learning_Admin_Menu
             'dogology-learning-settings',
             array($this, 'render_settings_page')
         );
+    }
+
+    public function render_survey_page()
+    {
+        require_once DOGOLOGY_LEARNING_PATH . 'admin/views/survey.php';
     }
 
     public function render_dashboard()
