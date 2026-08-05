@@ -392,7 +392,14 @@ class Dogology_Learning_Survey_Blast
             ),
         );
 
-        return array(array('type' => 'flex', 'altText' => $title, 'contents' => $bubble));
+        // altText is the lock-screen notification — for most recipients it is
+        // the ONLY line they read. $title alone ("คอร์ส 101 ยังค้างอยู่ใช่ไหมครับ")
+        // strips away the sentence that redeems it and lands as a nag.
+        return array(array(
+            'type'     => 'flex',
+            'altText'  => trim($hero . ' ' . $sub),
+            'contents' => $bubble,
+        ));
     }
 
     /** LINE push, reusing the MindMap sender when present. */

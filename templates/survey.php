@@ -66,6 +66,14 @@ if ($responded && $student
 }
 $done_flag    = !empty($_GET['done']);
 
+/**
+ * Where this person's book will actually arrive. The email cohort is BY
+ * DEFINITION the students with no usable LINE id, and the page was telling
+ * them four times that their gift was coming on LINE — including one line
+ * stating as fact that we had already sent it there.
+ */
+$dl_ch = ($student && $student->line_uid) ? ' LINE ' : 'อีเมล';
+
 $topic_opts = array();
 foreach ($topics as $k => $t) $topic_opts[$k] = $t['label'];
 
@@ -82,6 +90,15 @@ function dl_srv_set($type, $name, $prefix, array $items)
         );
     }
     echo '</div>' . "\n";
+}
+
+/** "ขั้นที่ N" numbered by POSITION in this student's sequence, not by panel id. */
+function dl_srv_step($panel, array $seq)
+{
+    $i = array_search($panel, $seq, true);
+    if ($i === false) return '';
+    if ($i === count($seq) - 1) return 'ขั้นสุดท้าย';
+    return 'ขั้นที่ ' . ($i + 1);
 }
 
 function dl_srv_nav($back, $next, $submit = false)
@@ -152,7 +169,7 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
     $dl = $student ? Dogology_Learning_Survey::grant_download_url((int) $student->id) : '';
     ?>
     <?php if ($dl): ?>
-      <p>ขอบคุณที่สละเวลาตอบนะครับ<br>ดาวน์โหลดอีบุ๊กได้เลย และเราส่งลิงก์ให้ทาง LINE ไว้ด้วยแล้ว</p>
+      <p>ขอบคุณที่สละเวลาตอบนะครับ<br>ดาวน์โหลดอีบุ๊กได้เลย และเราส่งลิงก์ให้ทาง<?php echo $dl_ch; ?>ไว้ด้วยแล้ว</p>
       <a class="gatebtn" id="dlbtn"
          href="<?php echo esc_url(add_query_arg('openExternalBrowser', '1', $dl)); ?>"
          data-raw="<?php echo esc_url($dl); ?>">ดาวน์โหลดอีบุ๊ก</a>
@@ -206,7 +223,7 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
       </script>
       <?php endif; ?>
     <?php else: ?>
-      <p>ขอบคุณที่สละเวลาตอบนะครับ<br>เราจะส่งอีบุ๊กให้ทาง LINE เร็ว ๆ นี้</p>
+      <p>ขอบคุณที่สละเวลาตอบนะครับ<br>เราจะส่งอีบุ๊กให้ทาง<?php echo $dl_ch; ?>เร็ว ๆ นี้</p>
     <?php endif; ?>
   </div>
 
@@ -306,10 +323,10 @@ for ($i = 1; $i <= 10; $i++) {
       <div class="hero">
         <p class="eyebrow">Dogology 101</p>
         <h1>แบบสอบถามผู้เรียน <span class="g">คอร์ส Dogology 101</span></h1>
-        <p class="lede">ตอนนี้เรากำลังจะปรับปรุงคอร์ส Dogology 101 ครั้งใหญ่ สิ่งที่คุณตอบวันนี้จะกำหนดว่าจะเพิ่มอะไรเข้าไปบ้าง ตอบตรง ๆ ได้เลยครับ ไม่ต้องเกรงใจ<br><br><b>เลือกอีบุ๊กที่อยากอ่านไว้ก่อนได้เลยครับ 1 เล่ม</b> เดี๋ยวเราส่งให้ทาง LINE ระหว่างนี้อยากชวนคุยเรื่องคอร์สสักสองสามคำถาม ใช้เวลาประมาณ 3 นาทีครับ</p>
+        <p class="lede">ตอนนี้เรากำลังจะปรับปรุงคอร์ส Dogology 101 ครั้งใหญ่ สิ่งที่คุณตอบวันนี้จะกำหนดว่าจะเพิ่มอะไรเข้าไปบ้าง ตอบตรง ๆ ได้เลยครับ ไม่ต้องเกรงใจ<br><br><b>เลือกอีบุ๊กที่อยากอ่านไว้ก่อนได้เลยครับ 1 เล่ม</b> เดี๋ยวเราส่งให้ทาง<?php echo $dl_ch; ?> ระหว่างนี้อยากชวนคุยเรื่องคอร์สสักสองสามคำถาม ใช้เวลาประมาณ 3 นาทีครับ</p>
         <div class="who-strip">
           <div class="av"><?php echo esc_html($initial); ?></div>
-          <div class="nm"><b><?php echo esc_html($display_name ?: 'ผู้เรียน'); ?></b><span>เข้าสู่ระบบด้วย LINE อัตโนมัติ</span></div>
+          <div class="nm"><b><?php echo esc_html($display_name ?: 'ผู้เรียน'); ?></b><span><?php echo $student && $student->line_uid ? 'เข้าสู่ระบบด้วย LINE อัตโนมัติ' : 'ยืนยันตัวตนจากลิงก์ในอีเมลแล้ว'; ?></span></div>
           <span class="ok">ยืนยันแล้ว</span>
         </div>
       </div>
@@ -335,7 +352,7 @@ for ($i = 1; $i <= 10; $i++) {
         <?php /* Feedback from a real run: people expected the book to arrive on
                  selection, and were unclear what the questions would be about.
                  State both, at the moment they press ถัดไป. */ ?>
-        <p class="fine" style="margin-top:18px">เลือกเสร็จแล้วกด "ถัดไป" เพื่อคุยกันต่อเรื่องคอร์ส Dogology 101<br>เล่มที่เลือกไว้ เราส่งให้ทาง LINE ครับ</p>
+        <p class="fine" style="margin-top:18px">เลือกเสร็จแล้วกด "ถัดไป" เพื่อคุยกันต่อเรื่องคอร์ส Dogology 101<br>เล่มที่เลือกไว้ เราส่งให้ทาง<?php echo $dl_ch; ?>ครับ</p>
       </div>
       <?php $n = $nav(1); dl_srv_nav($n['back'], $n['next'], $n['last']); ?>
     </section>
@@ -343,7 +360,7 @@ for ($i = 1; $i <= 10; $i++) {
     <!-- 2 — APPLIED (finished) / WHAT STOPPED YOU (unfinished) -->
     <section class="panel p2">
       <div class="sec">
-        <div class="step"><span class="n">ขั้นที่ 2</span><h2><?php echo $is_unf ? 'อะไรทำให้หยุด' : 'สิ่งที่เอาไปใช้จริง'; ?></h2></div>
+        <div class="step"><span class="n"><?php echo dl_srv_step(2, $seq); ?></span><h2><?php echo $is_unf ? 'อะไรทำให้หยุด' : 'สิ่งที่เอาไปใช้จริง'; ?></h2></div>
         <?php if (!$is_unf): ?>
           <div class="q qapplied">
             <span class="lab">จากคอร์ส Dogology 101 เรื่องไหนที่คุณเอาไปใช้จริงบ้าง *</span>
@@ -383,7 +400,7 @@ for ($i = 1; $i <= 10; $i++) {
     <!-- 3 — LIKED / EXPECTATION -->
     <section class="panel p3">
       <div class="sec">
-        <div class="step"><span class="n">ขั้นที่ 3</span><h2><?php echo $is_unf ? 'ความคาดหวังตอนซื้อ' : 'เนื้อหาที่ชอบ'; ?></h2></div>
+        <div class="step"><span class="n"><?php echo dl_srv_step(3, $seq); ?></span><h2><?php echo $is_unf ? 'ความคาดหวังตอนซื้อ' : 'เนื้อหาที่ชอบ'; ?></h2></div>
         <?php if (!$is_unf): ?>
           <div class="q">
             <span class="lab">เนื้อหาส่วนไหนที่ชอบที่สุด *</span>
@@ -404,7 +421,7 @@ for ($i = 1; $i <= 10; $i++) {
     <!-- 4 — WORTH / COMEBACK -->
     <section class="panel p4">
       <div class="sec">
-        <div class="step"><span class="n">ขั้นที่ 4</span><h2><?php echo $is_unf ? 'ทางกลับมา' : 'ความคุ้มค่า'; ?></h2></div>
+        <div class="step"><span class="n"><?php echo dl_srv_step(4, $seq); ?></span><h2><?php echo $is_unf ? 'ทางกลับมา' : 'ความคุ้มค่า'; ?></h2></div>
         <?php if (!$is_unf): ?>
           <div class="q">
             <span class="lab">คอร์ส Dogology 101 คุ้มค่ากับที่จ่ายไปแค่ไหน *</span>
@@ -429,7 +446,7 @@ for ($i = 1; $i <= 10; $i++) {
     <!-- 5 — WHAT TO ADD -->
     <section class="panel p5">
       <div class="sec">
-        <div class="step"><span class="n">ขั้นที่ 5</span><h2>อยากให้เพิ่มอะไร</h2></div>
+        <div class="step"><span class="n"><?php echo dl_srv_step(5, $seq); ?></span><h2>อยากให้เพิ่มอะไร</h2></div>
         <div class="q">
           <span class="lab">อยากให้เพิ่มหรือปรับอะไรในคอร์ส Dogology 101 บ้าง *</span>
           <span class="sub">เลือกได้หลายข้อ</span>
@@ -443,7 +460,7 @@ for ($i = 1; $i <= 10; $i++) {
     <!-- 6 — OUTCOME -->
     <section class="panel p6">
       <div class="sec">
-        <div class="step"><span class="n">ขั้นที่ 6</span><h2>ผลลัพธ์กับหมา</h2></div>
+        <div class="step"><span class="n"><?php echo dl_srv_step(6, $seq); ?></span><h2>ผลลัพธ์กับหมา</h2></div>
         <div class="q">
           <span class="lab">อะไรที่เรียนจากคอร์ส Dogology 101 แล้วช่วยให้หมาของคุณเปลี่ยนไปบ้าง เล่าให้ฟังหน่อย หรือไม่เปลี่ยนไปเลยก็บอกได้</span>
           <span class="sub">เล่าเป็นเหตุการณ์ก็ได้ครับ เช่น เมื่อก่อนเป็นแบบไหน ตอนนี้เป็นแบบไหน</span>
@@ -456,7 +473,7 @@ for ($i = 1; $i <= 10; $i++) {
     <!-- 7 — FRICTION (finished path only) -->
     <section class="panel p7">
       <div class="sec">
-        <div class="step"><span class="n">ขั้นที่ 7</span><h2>ความต่อเนื่องในการเรียน</h2></div>
+        <div class="step"><span class="n"><?php echo dl_srv_step(7, $seq); ?></span><h2>ความต่อเนื่องในการเรียน</h2></div>
         <div class="q">
           <span class="lab">มีอะไรที่ทำให้เรียนไม่ต่อเนื่องบ้าง</span>
           <span class="sub">เลือกได้หลายข้อ</span>
@@ -469,7 +486,7 @@ for ($i = 1; $i <= 10; $i++) {
     <!-- 8 — COMMENTS -->
     <section class="panel p8">
       <div class="sec">
-        <div class="step"><span class="n">ขั้นที่ 8</span><h2>เพิ่มเติม</h2></div>
+        <div class="step"><span class="n"><?php echo dl_srv_step(8, $seq); ?></span><h2>เพิ่มเติม</h2></div>
         <div class="q">
           <span class="lab">อยากบอกอะไรเพิ่มเติมไหม</span>
           <textarea name="comments" rows="4" placeholder="อะไรก็ได้"></textarea>
@@ -481,7 +498,7 @@ for ($i = 1; $i <= 10; $i++) {
     <!-- 9 — STARS (finished path only) -->
     <section class="panel p9">
       <div class="sec">
-        <div class="step"><span class="n">ขั้นที่ 9</span><h2>ให้คะแนนโดยรวม</h2></div>
+        <div class="step"><span class="n"><?php echo dl_srv_step(9, $seq); ?></span><h2>ให้คะแนนโดยรวม</h2></div>
         <div class="q">
           <span class="lab" style="text-align:center">ให้คะแนนคอร์ส Dogology 101 โดยรวม *</span>
           <div class="starbox">
@@ -520,7 +537,7 @@ for ($i = 1; $i <= 10; $i++) {
               <input type="text" name="dog_name" placeholder="เช่น ข้าวปั้น">
             </div>
             <div style="margin-top:12px">
-              <span class="sub">รูปน้อง (ถ้ามี) — ใช้เมื่อติ๊กยินยอมด้านบนเท่านั้นครับ</span>
+              <span class="sub">รูปน้อง (ถ้ามี) ใช้เมื่อติ๊กยินยอมด้านบนเท่านั้นครับ</span>
               <input class="ci" type="file" id="dogphoto" name="dog_photo" accept="image/*">
               <label class="photopick" for="dogphoto">
                 <img id="dogphoto-preview" alt="">
@@ -537,7 +554,7 @@ for ($i = 1; $i <= 10; $i++) {
           <span class="sub">สิ่งที่คุณเล่ามาจะถูกอ่านจริง ๆ และจะถูกใช้ตัดสินใจว่าจะปรับอะไรก่อนครับ</span>
         </div>
         <?php endif; ?>
-        <p class="fine">ขอบคุณที่สละเวลานะครับ เดี๋ยวเราส่งอีบุ๊กให้ทาง LINE ครับ</p>
+        <p class="fine">ขอบคุณที่สละเวลานะครับ เดี๋ยวเราส่งอีบุ๊กให้ทาง<?php echo $dl_ch; ?>ครับ</p>
       </div>
       <?php $n = $nav(10); dl_srv_nav($n['back'], 0, true); ?>
     </section>
@@ -578,6 +595,17 @@ for ($i = 1; $i <= 10; $i++) {
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
+    // Nothing enforces an ebook pick, but every closing line promises one —
+    // so a respondent who taps past panel 1 gets a promise we silently void.
+    // Ask once, and put them back on the picker.
+    var picked = form.querySelector('input[name="ebook_choice"]:checked');
+    if (!picked) {
+      var w1 = document.getElementById('w1');
+      if (w1) w1.checked = true;
+      window.scrollTo(0, 0);
+      alert('ยังไม่ได้เลือกอีบุ๊กครับ เลือก 1 เล่มก่อนส่งคำตอบนะครับ');
+      return;
+    }
     form.classList.add('sending');
     var fd = new FormData(form), out = {};
     fd.forEach(function (v, k) {
@@ -593,7 +621,14 @@ for ($i = 1; $i <= 10; $i++) {
       // 'duplicate' means the answers ARE saved — treat it as success rather
       // than sending the student round a retry loop that can only repeat.
       if (j && (j.ok || j.error === 'duplicate')) {
-        location.href = '<?php echo esc_url_raw(home_url('/101-survey/?done=1')); ?>';
+        // Carry the token through. The token deliberately mints no session, so
+        // without it the thank-you page cannot identify the student, cannot
+        // resolve their grant, and falls back to "we'll send it soon" — the
+        // download button, the copyable link and the whole LIFF escape would
+        // never render for anyone who arrived by link, which is nearly everyone.
+        location.href = '<?php echo esc_url_raw(add_query_arg(
+            array('done' => 1), home_url('/101-survey/'))); ?>'
+          + (<?php echo $dl_token ? "'&t=' + encodeURIComponent('" . esc_js($dl_token) . "')" : "''"; ?>);
       }
       else { form.classList.remove('sending'); alert((j && j.message) || 'ส่งไม่สำเร็จ ลองใหม่อีกครั้งครับ'); }
     }).catch(function () {

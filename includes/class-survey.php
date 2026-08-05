@@ -1146,10 +1146,15 @@ DLCSS;
         }
 
         if (class_exists('Dogology_Commerce_Orders_API')) {
-            // Each helper no-ops when its channel is missing, so a student with
-            // only an email still gets the download link and vice versa.
-            Dogology_Commerce_Orders_API::send_payment_confirmation_line($order_id);
-            if ($student->email) {
+            // ONE channel, not both. The old comment claimed each helper
+            // no-ops when its channel is missing — true — but most students
+            // have LINE *and* an email, so both fired and the book was
+            // delivered twice. LINE is where these students already talk to
+            // us; email is the fallback for the ones LINE cannot reach.
+            $sent_line = $student->line_uid
+                ? Dogology_Commerce_Orders_API::send_payment_confirmation_line($order_id)
+                : false;
+            if (!$sent_line && $student->email) {
                 Dogology_Commerce_Orders_API::send_order_email($order_id, 'payment_received');
             }
         }
@@ -1325,6 +1330,11 @@ DLCSS;
         // array under "applied", so the shapes match what store() expects.
         $res = self::store($user_id, $payload);
         $arg = is_wp_error($res) ? array('err' => $res->get_error_code()) : array('done' => 1);
+        // Same as the JS path: without the token the thank-you page cannot
+        // identify the student and so cannot offer their download.
+        if (!empty($_POST['t'])) {
+            $arg['t'] = sanitize_text_field(wp_unslash($_POST['t']));
+        }
         wp_safe_redirect(add_query_arg($arg, home_url('/101-survey/')));
         exit;
     }
