@@ -1090,6 +1090,17 @@ DLCSS;
                 'survey_key'         => self::SURVEY_KEY,
                 'survey_response_id' => (int) $response_id,
                 'granted_at'         => $now,
+                // A giveaway is not a sale, so no Purchase may ever be sent for
+                // it. Skipping dogology_order_approved was NOT enough:
+                // Orders_API::retry_failed_purchase_capi() is a cron sweep that
+                // every 5 minutes picks up any paid order whose meta does not
+                // say a Purchase was already handled, and fires Meta CAPI + GA4
+                // for it. A ฿0 grant looks exactly like that — which is how
+                // SG-1, SG-2 and SG-5 each put a zero-value Purchase into the
+                // data the ad algorithm optimises on. These are the two flags
+                // that sweep's WHERE clause excludes on.
+                'capi_purchase_sent'    => true,
+                'capi_purchase_gave_up' => true,
             ), JSON_UNESCAPED_UNICODE),
             'created_at'      => $now,
         ));
