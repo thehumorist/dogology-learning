@@ -417,8 +417,11 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
             <div style="margin-top:12px">
               <span class="sub">รูปน้อง (ถ้ามี)</span>
               <input class="ci" type="file" id="dogphoto" name="dog_photo" accept="image/*">
-              <label class="opt" for="dogphoto" style="margin:6px 0 0"><i></i><span id="dogphoto-label">เลือกรูปน้องหมา</span></label>
-              <img id="dogphoto-preview" alt="" style="display:none;width:96px;height:96px;object-fit:cover;border-radius:12px;margin-top:10px">
+              <label class="photopick" for="dogphoto">
+                <img id="dogphoto-preview" alt="">
+                <span class="ph"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
+                <span id="dogphoto-label">แตะเพื่อเลือกรูป</span>
+              </label>
               <input type="hidden" name="photo_attachment_id" id="photo_attachment_id" value="">
             </div>
           </div>
@@ -454,9 +457,9 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
       }).then(function (r) { return r.json(); }).then(function (j) {
         if (j && j.ok) {
           document.getElementById('photo_attachment_id').value = j.attachment_id;
-          var pv = document.getElementById('dogphoto-preview');
-          pv.src = j.url; pv.style.display = 'block';
-          lab.textContent = 'เปลี่ยนรูป';
+          document.getElementById('dogphoto-preview').src = j.url;
+          lab.parentNode.classList.add('has');
+          lab.textContent = 'แตะเพื่อเปลี่ยนรูป';
         } else { lab.textContent = 'อัปโหลดไม่สำเร็จ แตะเพื่อลองใหม่'; }
       }).catch(function () { lab.textContent = 'อัปโหลดไม่สำเร็จ แตะเพื่อลองใหม่'; });
     });

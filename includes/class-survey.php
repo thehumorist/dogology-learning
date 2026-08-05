@@ -412,6 +412,19 @@ textarea,input[type=text]{background:#fff}
   border:1px solid rgba(0,171,142,.2);border-radius:12px;padding:14px 13px;margin-top:16px}
 .bestwrap .opt,.subq .opt{background:#fff}
 .q{display:flex;flex-direction:column;margin-bottom:26px}
+
+/* Photo picker — deliberately NOT the .opt row style: reusing it drew a
+   checkbox, which reads as "tick to agree", not "tap to add a picture". */
+.photopick{display:flex;align-items:center;gap:11px;min-height:var(--tap);
+  padding:10px 12px;margin-top:6px;background:#fff;border:1px dashed var(--rule);
+  border-radius:12px;cursor:pointer;font-size:14px;color:var(--body)}
+.photopick .ph{display:flex;align-items:center;justify-content:center;
+  width:38px;height:38px;flex:none;border-radius:10px;
+  background:rgba(0,171,142,.08);color:var(--teal-deep)}
+.photopick img{display:none;width:44px;height:44px;flex:none;object-fit:cover;border-radius:10px}
+.photopick.has img{display:block}
+.photopick.has .ph{display:none}
+.photopick.has{border-style:solid;border-color:var(--teal)}
 .books{display:grid;grid-template-columns:1fr;gap:10px}
 .sec{padding:20px var(--pad) 4px}
 img{max-width:100%;height:auto}
