@@ -9,7 +9,7 @@
  */
 if (!defined('ABSPATH')) exit;
 
-$student = Dogology_Learning_Auth::get_current_student();
+$student = Dogology_Auth::get_current_student();
 $ctx     = $student ? Dogology_Learning_Survey::context_for((int) $student->id) : null;
 $mm      = get_option('dogology_mindmap_settings', array());
 $liff_id = isset($mm['liff_id']) ? $mm['liff_id'] : '';

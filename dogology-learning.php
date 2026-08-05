@@ -3,7 +3,7 @@
  * Plugin Name: Dogology Learning
  * Plugin URI:  https://dogology.org
  * Description: The core learning platform for Dogology. Manages courses, students (custom auth), and progress tracking.
- * Version:     1.6.0
+ * Version:     1.6.1
  * Author:      Dogology Dev
  * Text Domain: dogology-learning
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('DOGOLOGY_LEARNING_VERSION', '1.6.0');
+define('DOGOLOGY_LEARNING_VERSION', '1.6.1');
 define('DOGOLOGY_LEARNING_PATH', plugin_dir_path(__FILE__));
 define('DOGOLOGY_LEARNING_URL', plugin_dir_url(__FILE__));
 
@@ -69,6 +69,14 @@ require_once DOGOLOGY_LEARNING_PATH . 'includes/class-integration-commerce.php';
 require_once DOGOLOGY_LEARNING_PATH . 'includes/class-ebook.php';
 require_once DOGOLOGY_LEARNING_PATH . 'includes/class-survey.php';
 require_once DOGOLOGY_LEARNING_PATH . 'includes/class-survey-blast.php';
+// Survey tables ship with the survey module, not the admin-only installer —
+// otherwise the front-end route queries tables that do not exist yet because
+// nobody has opened wp-admin since the deploy.
+if (get_option('dogology_survey_db_version') !== DOGOLOGY_LEARNING_VERSION) {
+    Dogology_Learning_Survey::install();
+    Dogology_Learning_Survey_Blast::install();
+    update_option('dogology_survey_db_version', DOGOLOGY_LEARNING_VERSION, false);
+}
 Dogology_Learning_Survey::boot();
 Dogology_Learning_Survey_Blast::boot();
 

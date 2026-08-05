@@ -387,7 +387,18 @@ class Dogology_Learning_Survey
             if (!defined('DONOTCACHEPAGE')) define('DONOTCACHEPAGE', true);
             if (!defined('DONOTROCKETOPTIMIZE')) define('DONOTROCKETOPTIMIZE', true);
             nocache_headers();
-            include DOGOLOGY_LEARNING_PATH . 'templates/survey.php';
+            // A template fatal took the whole route down with a bare 500 and no
+            // message. Fail visibly but gracefully instead, and record it.
+            try {
+                include DOGOLOGY_LEARNING_PATH . 'templates/survey.php';
+            } catch (\Throwable $e) {
+                error_log('[dogology-survey] template error: ' . $e->getMessage());
+                status_header(500);
+                echo '<!doctype html><meta charset="utf-8"><title>ขออภัย</title>'
+                   . '<div style="font-family:sans-serif;padding:40px;text-align:center">'
+                   . '<h1 style="font-size:20px">ระบบขัดข้องชั่วคราว</h1>'
+                   . '<p>ลองใหม่อีกครั้งในสักครู่ครับ</p></div>';
+            }
             exit;
         });
         add_action('rest_api_init', array(__CLASS__, 'register_routes'));
@@ -433,10 +444,10 @@ class Dogology_Learning_Survey
         }
         $mm        = get_option('dogology_mindmap_settings', array());
         $channel   = isset($mm['liff_id']) ? explode('-', (string) $mm['liff_id'])[0] : '';
-        if ($channel === '' || !method_exists('Dogology_Learning_Auth', 'verify_line_id_token')) {
+        if ($channel === '' || !method_exists('Dogology_Auth', 'verify_line_id_token')) {
             return new WP_REST_Response(array('ok' => false, 'error' => 'liff_not_configured'), 400);
         }
-        $claims = Dogology_Learning_Auth::verify_line_id_token($id_token, $channel);
+        $claims = Dogology_Auth::verify_line_id_token($id_token, $channel);
         if (!$claims || empty($claims['sub'])) {
             return new WP_REST_Response(array('ok' => false, 'error' => 'invalid_token'), 401);
         }
@@ -446,7 +457,7 @@ class Dogology_Learning_Survey
         if (!$user_id) {
             return new WP_REST_Response(array('ok' => false, 'error' => 'no_student'), 404);
         }
-        Dogology_Learning_Auth::login_student($user_id);
+        Dogology_Auth::login_student($user_id);
         return new WP_REST_Response(array('ok' => true), 200);
     }
 
@@ -455,7 +466,7 @@ class Dogology_Learning_Survey
         $payload = $request->get_json_params();
         if (!is_array($payload)) $payload = $request->get_params();
 
-        $student = Dogology_Learning_Auth::get_current_student();
+        $student = Dogology_Auth::get_current_student();
         $user_id = $student ? (int) $student->id : 0;
         if (!$user_id) {
             return new WP_REST_Response(array('ok' => false, 'error' => 'not_logged_in'), 401);
