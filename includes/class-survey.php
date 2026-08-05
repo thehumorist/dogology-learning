@@ -311,15 +311,12 @@ textarea{font-size:16px;padding:11px 13px;line-height:1.55}
   h1{font-size:23px}
 }
 
-/* --- segment scoping for nav buttons ---------------------------------------
-    and .back{display:inline-flex} have the SAME
-   specificity (0,1,0) and .back is declared later, so it won and both the
-   finished and unfinished buttons rendered together. These rules are scoped
-   under .nav (0,2,0) so they outrank the button display rules.             */
-.nav 
-
-/* same collision class for any question block that still carries the flag */
-.q
+/* NOTE: two orphaned selector fragments (`.nav` and `.q`, left behind when an
+   earlier same-specificity fix was rewritten) used to sit here. Each was
+   followed by a comment, so the parser fused them with the rule below into
+   `.nav .q .panel{...}` — a selector that matches nothing, silently killing the
+   panel-height rule. The corrective layer further down masked it. Both dead
+   fragments are gone; the height rule now stands on its own.                */
 
 /* --- stable screen height ---------------------------------------------------
    A short question used to leave the buttons floating mid-screen while a long
@@ -397,13 +394,16 @@ textarea,input[type=text]{background:#fff}
 
 
 /* ==========================================================================
-   CORRECTIVE LAYER — appended last so it wins.
-   The base stylesheet was lifted out of the design mock by regex, and that
-   extraction damaged the @media (min-width:1040px) wrapper: its desktop rules
-   leaked out and applied at every width. `.shell` became a two-column grid
-   with a fixed 340px track on a 375px phone, which pushed the whole page
-   sideways. `.opts` and `.bestwrap` lost their rules altogether.
-   Everything below restores mobile-first behaviour explicitly.
+   MOBILE-FIRST BASELINE — appended last so it wins.
+
+   History, because the comment that used to sit here was wrong and cost a day:
+   this block was added to repair a supposedly-damaged @media (min-width:1040px)
+   wrapper. A later audit proved the wrapper was intact — the real culprit was a
+   fused selector list that hid every heading. These rules are kept because they
+   are a correct, explicit mobile-first baseline, NOT because anything upstream
+   is broken. The `.panel` line that used to be here was removed: it shadowed
+   the real rule above and threw away its calc(100vh) fallback for browsers
+   without svh.
    ========================================================================== */
 .shell{display:block;max-width:none;margin:0;padding:0}
 .form{background:transparent;border:0;border-radius:0;overflow:visible}
@@ -411,7 +411,6 @@ textarea,input[type=text]{background:#fff}
 .bestwrap{display:flex;flex-direction:column;background:rgba(0,171,142,.06);
   border:1px solid rgba(0,171,142,.2);border-radius:12px;padding:14px 13px;margin-top:16px}
 .bestwrap .opt,.subq .opt{background:#fff}
-.panel{flex-direction:column;min-height:calc(100svh - 4px)}
 .q{display:flex;flex-direction:column;margin-bottom:26px}
 .books{display:grid;grid-template-columns:1fr;gap:10px}
 .sec{padding:20px var(--pad) 4px}
@@ -437,10 +436,16 @@ DLCSS;
      * the wrong page entirely. A signed token in the link is what M4 already
      * does, needs no LINE context, and works in any browser.
      */
-    public static function make_token($user_id)
+    const TOKEN_TTL_DAYS = 14;
+
+    public static function make_token($user_id, $issued = 0)
     {
         $uid = (int) $user_id;
-        return $uid . '.' . substr(hash_hmac('sha256', 'survey|' . $uid, DOGOLOGY_AUTH_SALT), 0, 24);
+        // Day-resolution issue stamp, bound INTO the signature so it can't be
+        // edited. Without it the link never expired and never could be revoked.
+        $day = $issued ? (int) $issued : (int) floor(time() / DAY_IN_SECONDS);
+        return $uid . '.' . $day . '.'
+            . substr(hash_hmac('sha256', 'survey|' . $uid . '|' . $day, DOGOLOGY_AUTH_SALT), 0, 24);
     }
 
     /**
@@ -465,13 +470,22 @@ DLCSS;
         return hash_equals(self::preview_sig($user_id, $segment), (string) $sig);
     }
 
+    /**
+     * @return int Student id, or 0 if malformed, forged, or expired.
+     */
     public static function verify_token($token)
     {
         $parts = explode('.', (string) $token);
-        if (count($parts) !== 2) return 0;
+        if (count($parts) !== 3) return 0;             // legacy 2-part tokens are dead
         $uid = (int) $parts[0];
-        if ($uid <= 0) return 0;
-        return hash_equals(self::make_token($uid), $token) ? $uid : 0;
+        $day = (int) $parts[1];
+        if ($uid <= 0 || $day <= 0) return 0;
+        if (!hash_equals(self::make_token($uid, $day), (string) $token)) return 0;
+
+        $age = (int) floor(time() / DAY_IN_SECONDS) - $day;
+        if ($age < 0 || $age > self::TOKEN_TTL_DAYS) return 0;
+
+        return $uid;
     }
 
     public static function responses_table() { global $wpdb; return $wpdb->prefix . 'dogology_survey_responses'; }
@@ -676,6 +690,37 @@ DLCSS;
     }
 
     /** Persist one submission. Returns response id, or WP_Error. */
+    /** @return string|null The value only if it is a known key. */
+    protected static function in_registry(array $payload, $field, array $valid)
+    {
+        if (!isset($payload[$field]) || !is_scalar($payload[$field])) return null;
+        $v = sanitize_key((string) $payload[$field]);
+        return in_array($v, $valid, true) ? $v : null;
+    }
+
+    /**
+     * The verbatim payload, kept as a safety net for questions the columns do
+     * not model. Bounded and shallow: it is unvalidated client input, so a
+     * nested or oversized body must not become an unbounded row.
+     */
+    protected static function raw_json(array $payload)
+    {
+        $flat = array();
+        foreach ($payload as $k => $v) {
+            $k = substr(sanitize_key((string) $k), 0, 48);
+            if ($k === '') continue;
+            if (is_array($v)) {
+                $flat[$k] = array_map(function ($x) {
+                    return is_scalar($x) ? substr((string) $x, 0, 500) : '';
+                }, array_slice($v, 0, 40));
+            } elseif (is_scalar($v)) {
+                $flat[$k] = substr((string) $v, 0, 2000);
+            }
+        }
+        $json = wp_json_encode($flat, JSON_UNESCAPED_UNICODE);
+        return strlen($json) > 60000 ? substr($json, 0, 60000) : $json;
+    }
+
     /** @return int|null Attachment id if this student uploaded it, else null. */
     protected static function own_attachment(array $payload, $user_id)
     {
@@ -726,22 +771,33 @@ DLCSS;
             'days_since_first_touch'  => $days($ctx['first_touch']),
             'star_rating'             => $int('star_rating', 5),
             'worth_rating'            => $int('worth_rating', 5),
-            'best_topic'              => isset($payload['best_topic']) ? sanitize_key($payload['best_topic']) : null,
+            // Checked against the registries, not just sanitised: these are
+            // client-supplied, feed reporting and the ebook grant, and anything
+            // over 64 chars would have overflowed the column.
+            'best_topic'              => self::in_registry($payload, 'best_topic', array_keys(self::topics())),
             'best_reason'             => $txt('best_reason'),
             'expectation'             => $txt('expectation'),
             'outcome'                 => $txt('outcome'),
             'add_other'               => $txt('add_other'),
             'comments'                => $txt('comments'),
-            'ebook_choice'            => isset($payload['ebook_choice']) ? sanitize_key($payload['ebook_choice']) : null,
+            'ebook_choice'            => self::in_registry($payload, 'ebook_choice', array_keys(self::ebooks())),
             'consent_testimonial'     => !empty($payload['consent_testimonial']) ? 1 : 0,
             'dog_name'                => isset($payload['dog_name']) ? sanitize_text_field((string) $payload['dog_name']) : null,
             // Only honour an attachment this same student uploaded — the id is
             // client-supplied, and without the check any media id would attach.
             'photo_attachment_id'     => self::own_attachment($payload, $user_id),
-            'raw_json'                => wp_json_encode($payload, JSON_UNESCAPED_UNICODE),
+            'raw_json'                => self::raw_json($payload),
             'submitted_at'            => $now,
         ));
-        if (!$ok) return new WP_Error('db', 'บันทึกไม่สำเร็จ');
+        if (!$ok) {
+            // has_responded() above is check-then-act; the UNIQUE key is what
+            // actually decides a double-tap. Ask it who lost, so the loser gets
+            // "already answered" instead of a generic failure they'd retry.
+            if (self::has_responded($user_id)) {
+                return new WP_Error('duplicate', 'ตอบแบบสอบถามนี้ไปแล้ว');
+            }
+            return new WP_Error('db', 'บันทึกไม่สำเร็จ');
+        }
         $rid = (int) $wpdb->insert_id;
 
         // Multi-selects go to the long table so an implementation rate is a
@@ -1032,13 +1088,13 @@ DLCSS;
             return; // stale page — fall through and re-render rather than 403
         }
 
-        $student = Dogology_Auth::get_current_student();
-        $user_id = $student ? (int) $student->id : 0;
+        $user_id = self::actor(isset($_POST['t']) ? sanitize_text_field(wp_unslash($_POST['t'])) : '');
         if (!$user_id) return;
 
-        // The wizard's own state radio is navigation, not an answer.
+        // The wizard's own state radio is navigation, not an answer; `t` is a
+        // credential, not one either.
         $payload = wp_unslash($_POST);
-        unset($payload['wz'], $payload['dl_survey_nonce'], $payload['_wp_http_referer']);
+        unset($payload['wz'], $payload['t'], $payload['dl_survey_nonce'], $payload['_wp_http_referer']);
 
         // Native POST names multi-selects "applied[]"; PHP already gives us the
         // array under "applied", so the shapes match what store() expects.
@@ -1058,8 +1114,8 @@ DLCSS;
      */
     public static function handle_photo($request)
     {
-        $student = Dogology_Auth::get_current_student();
-        if (!$student) {
+        $user_id = self::actor(isset($_POST['t']) ? sanitize_text_field(wp_unslash($_POST['t'])) : '');
+        if (!$user_id) {
             return new WP_REST_Response(array('ok' => false, 'error' => 'not_logged_in'), 401);
         }
         if (empty($_FILES['file'])) {
@@ -1079,13 +1135,13 @@ DLCSS;
         require_once ABSPATH . 'wp-admin/includes/image.php';
 
         $id = media_handle_upload('file', 0, array(
-            'post_title' => 'Survey photo — student ' . (int) $student->id,
+            'post_title' => 'Survey photo — student ' . (int) $user_id,
         ), array('test_form' => false));
         if (is_wp_error($id)) {
             return new WP_REST_Response(array('ok' => false, 'error' => 'upload_failed',
                 'message' => $id->get_error_message()), 400);
         }
-        update_post_meta($id, '_dl_survey_student', (int) $student->id);
+        update_post_meta($id, '_dl_survey_student', (int) $user_id);
 
         return new WP_REST_Response(array(
             'ok' => true, 'attachment_id' => (int) $id,
@@ -1093,16 +1149,29 @@ DLCSS;
         ), 200);
     }
 
+    /**
+     * Who is submitting: a real LMS session (LIFF path), or the signed survey
+     * token carried by the form (link path). The token authorises this survey
+     * and nothing else — see the note in the template about why it no longer
+     * mints a session.
+     */
+    protected static function actor($token = '')
+    {
+        $student = Dogology_Auth::get_current_student();
+        if ($student) return (int) $student->id;
+        return $token ? (int) self::verify_token($token) : 0;
+    }
+
     public static function handle_submit($request)
     {
         $payload = $request->get_json_params();
         if (!is_array($payload)) $payload = $request->get_params();
 
-        $student = Dogology_Auth::get_current_student();
-        $user_id = $student ? (int) $student->id : 0;
+        $user_id = self::actor(isset($payload['t']) ? (string) $payload['t'] : '');
         if (!$user_id) {
             return new WP_REST_Response(array('ok' => false, 'error' => 'not_logged_in'), 401);
         }
+        unset($payload['t']);           // credential, not an answer
         $res = self::store($user_id, $payload);
         if (is_wp_error($res)) {
             return new WP_REST_Response(array('ok' => false, 'error' => $res->get_error_code(),

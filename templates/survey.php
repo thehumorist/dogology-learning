@@ -22,13 +22,19 @@ if (!defined('ABSPATH')) exit;
  * back empty and the gate showed even though the token was valid. Load the
  * student directly for this request instead.
  */
-$student = Dogology_Auth::get_current_student();
+$student  = Dogology_Auth::get_current_student();
+$dl_token = '';
 if (!$student && !empty($_GET['t'])) {
-    $tok_uid = Dogology_Learning_Survey::verify_token(sanitize_text_field(wp_unslash($_GET['t'])));
+    $t       = sanitize_text_field(wp_unslash($_GET['t']));
+    $tok_uid = Dogology_Learning_Survey::verify_token($t);
     if ($tok_uid) {
-        Dogology_Auth::login_student($tok_uid);          // persist for later requests
-        $dl_db   = new Dogology_Student_DB();
-        $student = $dl_db->get_student($tok_uid);        // and use it right now
+        // Deliberately NOT login_student(): that minted a 30-day LMS session,
+        // so anyone holding the link owned the whole account — My Courses, the
+        // player, every ebook download. The token now buys exactly one thing,
+        // this survey, and rides along in the form instead of a cookie.
+        $dl_token = $t;
+        $dl_db    = new Dogology_Student_DB();
+        $student  = $dl_db->get_student($tok_uid);
     }
 }
 $ctx     = $student ? Dogology_Learning_Survey::context_for((int) $student->id) : null;
@@ -188,6 +194,7 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
 <?php else: ?>
 <form id="survey-form" method="post" action="<?php echo esc_url(home_url('/101-survey/')); ?>">
 <?php wp_nonce_field('dl_survey_submit', 'dl_survey_nonce'); ?>
+<?php if ($dl_token): ?><input type="hidden" name="t" value="<?php echo esc_attr($dl_token); ?>"><?php endif; ?>
 <?php
 /**
  * The wizard radios must be SIBLINGS OF .shell — the page rules are
@@ -440,6 +447,8 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
       var lab = document.getElementById('dogphoto-label');
       lab.textContent = 'กำลังอัปโหลด...';
       var fd = new FormData(); fd.append('file', f);
+      var tk = form.querySelector('input[name="t"]');
+      if (tk) fd.append('t', tk.value);
       fetch('<?php echo esc_url_raw(rest_url('dogology-learning/v1/survey-photo')); ?>', {
         method: 'POST', credentials: 'same-origin', body: fd
       }).then(function (r) { return r.json(); }).then(function (j) {

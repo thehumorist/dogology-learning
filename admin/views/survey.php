@@ -26,7 +26,9 @@ if (!empty($_POST['dl_survey_nonce']) && wp_verify_nonce($_POST['dl_survey_nonce
         );
         $notice = !empty($res['ok'])
             ? 'ส่งตัวอย่างเรียบร้อย ตรวจใน LINE ได้เลย'
-            : 'ส่งตัวอย่างไม่สำเร็จ: ' . esc_html($res['error'] ?? 'unknown');
+            // NOT esc_html here — $notice is escaped once where it is printed.
+            // Escaping twice rendered LINE's API errors as literal &quot;.
+            : 'ส่งตัวอย่างไม่สำเร็จ: ' . ($res['error'] ?? 'unknown');
     }
 
     if ($action === 'launch') {
@@ -159,10 +161,13 @@ $fopts   = Dogology_Learning_Survey::options('friction');
             <?php checked(in_array($seg, array('finished', 'near'), true)); ?>>
           <?php echo esc_html($lbl); ?>
           <strong>(<?php echo (int) ($counts[$seg] ?? 0); ?> คน)</strong>
+          <?php $nl = (int) ($counts['no_line_by_segment'][$seg] ?? 0); if ($nl): ?>
+            <span style="color:#b45309">— ไม่มี LINE <?php echo $nl; ?> คน</span>
+          <?php endif; ?>
         </label>
       <?php endforeach; ?>
       <p style="color:#666">
-        ไม่มี LINE ID <strong><?php echo (int) $counts['no_line']; ?></strong> คน — กลุ่มนี้ส่งไม่ได้ ต้องใช้อีเมลแทน<br>
+        รวมทั้งหมดที่ไม่มี LINE ID <strong><?php echo (int) $counts['no_line']; ?></strong> คน — ส่งไม่ได้ ต้องใช้อีเมลแทน<br>
         กดซ้ำได้ปลอดภัย ระบบข้ามคนที่อยู่ในคิวหรือตอบไปแล้วเสมอ
       </p>
       <button class="button button-primary">เข้าคิวและเริ่มส่ง</button>

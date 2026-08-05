@@ -83,15 +83,52 @@ class Dogology_Learning_Survey_Blast
         return $out;
     }
 
+    /**
+     * user_id => line_uid for the whole audience, in ONE query.
+     * This was a per-student SELECT inside two different loops, so an admin page
+     * load cost roughly two queries per enrolled student and the Blast button
+     * paid it all over again.
+     */
+    protected static function line_uids()
+    {
+        static $map = null;
+        if ($map !== null) return $map;
+        global $wpdb;
+        $map = array();
+        $rows = $wpdb->get_results(
+            "SELECT id, line_uid FROM {$wpdb->prefix}dogology_users WHERE line_uid <> ''", ARRAY_A);
+        foreach ($rows as $r) $map[(int) $r['id']] = $r['line_uid'];
+        return $map;
+    }
+
+    /** Everyone who has already answered, in ONE query. */
+    protected static function responded_ids()
+    {
+        static $set = null;
+        if ($set !== null) return $set;
+        global $wpdb;
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT user_id FROM " . Dogology_Learning_Survey::responses_table() . " WHERE survey_key = %s",
+            Dogology_Learning_Survey::SURVEY_KEY
+        ));
+        $set = array_flip(array_map('intval', $ids));
+        return $set;
+    }
+
     public static function counts()
     {
         $c = array('finished' => 0, 'near' => 0, 'stalled' => 0, 'not_started' => 0, 'no_line' => 0);
-        global $wpdb;
+        // Per-segment too: a single total does not describe the launch you are
+        // about to press, which only ever covers the selected segments.
+        $c['no_line_by_segment'] = array('finished' => 0, 'near' => 0, 'stalled' => 0, 'not_started' => 0);
+        $line = self::line_uids();
         foreach (self::audience() as $uid => $ctx) {
-            $c[$ctx['segment']] = ($c[$ctx['segment']] ?? 0) + 1;
-            $uidline = $wpdb->get_var($wpdb->prepare(
-                "SELECT line_uid FROM {$wpdb->prefix}dogology_users WHERE id = %d", $uid));
-            if (!$uidline) $c['no_line']++;
+            $seg = $ctx['segment'];
+            $c[$seg] = ($c[$seg] ?? 0) + 1;
+            if (empty($line[(int) $uid])) {
+                $c['no_line']++;
+                $c['no_line_by_segment'][$seg] = ($c['no_line_by_segment'][$seg] ?? 0) + 1;
+            }
         }
         return $c;
     }
@@ -106,12 +143,13 @@ class Dogology_Learning_Survey_Blast
         global $wpdb;
         $now = current_time('mysql');
         $added = 0; $skipped = 0; $noline = 0;
+        $lines     = self::line_uids();
+        $responded = self::responded_ids();
         foreach (self::audience() as $uid => $ctx) {
             if (!in_array($ctx['segment'], $segments, true)) continue;
-            $line = $wpdb->get_var($wpdb->prepare(
-                "SELECT line_uid FROM {$wpdb->prefix}dogology_users WHERE id = %d", $uid));
+            $line = isset($lines[(int) $uid]) ? $lines[(int) $uid] : '';
             if (!$line) { $noline++; continue; }
-            if (Dogology_Learning_Survey::has_responded($uid)) { $skipped++; continue; }
+            if (isset($responded[(int) $uid])) { $skipped++; continue; }
             $ok = $wpdb->query($wpdb->prepare(
                 "INSERT IGNORE INTO " . self::table() . "
                  (survey_key,user_id,line_uid,segment,source,lessons_done_at_send,

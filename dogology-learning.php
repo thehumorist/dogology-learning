@@ -3,7 +3,7 @@
  * Plugin Name: Dogology Learning
  * Plugin URI:  https://dogology.org
  * Description: The core learning platform for Dogology. Manages courses, students (custom auth), and progress tracking.
- * Version:     1.6.9
+ * Version:     1.6.10
  * Author:      Dogology Dev
  * Text Domain: dogology-learning
  */
@@ -12,7 +12,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('DOGOLOGY_LEARNING_VERSION', '1.6.9');
+define('DOGOLOGY_LEARNING_VERSION', '1.6.10');
 define('DOGOLOGY_LEARNING_PATH', plugin_dir_path(__FILE__));
 define('DOGOLOGY_LEARNING_URL', plugin_dir_url(__FILE__));
 
@@ -72,11 +72,21 @@ require_once DOGOLOGY_LEARNING_PATH . 'includes/class-survey-blast.php';
 // Survey tables ship with the survey module, not the admin-only installer —
 // otherwise the front-end route queries tables that do not exist yet because
 // nobody has opened wp-admin since the deploy.
-if (get_option('dogology_survey_db_version') !== DOGOLOGY_LEARNING_VERSION) {
+//
+// Deferred to plugins_loaded and lock-guarded: this used to run at include
+// time, before WP was assembled, on every public request that raced past the
+// version check — so concurrent visitors could run dbDelta simultaneously.
+add_action('plugins_loaded', function () {
+    if (get_option('dogology_survey_db_version') === DOGOLOGY_LEARNING_VERSION) return;
+    // A transient is enough: the loser skips this request and picks the tables
+    // up on the next one, and it self-heals if a run dies mid-flight.
+    if (get_transient('dogology_survey_installing')) return;
+    set_transient('dogology_survey_installing', 1, 60);
     Dogology_Learning_Survey::install();
     Dogology_Learning_Survey_Blast::install();
     update_option('dogology_survey_db_version', DOGOLOGY_LEARNING_VERSION, false);
-}
+    delete_transient('dogology_survey_installing');
+}, 1);
 Dogology_Learning_Survey::boot();
 Dogology_Learning_Survey_Blast::boot();
 
