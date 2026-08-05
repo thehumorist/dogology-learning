@@ -175,10 +175,17 @@ foreach ($hide as $h) printf(".p%d{display:none !important}\n", $h);
   <?php endif; ?>
 
 <?php else: ?>
+<form id="survey-form" method="post">
+<?php
+/**
+ * The wizard radios must be SIBLINGS OF .shell — the page rules are
+ * `#wN:checked ~ .shell .pN`. They were emitted outside the <form> while
+ * .shell sits inside it, so the combinator never matched and every panel
+ * stayed hidden: a completely blank page.
+ */
+?>
 <input class="ci" type="radio" name="wz" id="w1" checked>
 <?php for ($i = 2; $i <= 10; $i++) printf('<input class="ci" type="radio" name="wz" id="w%d">' . "\n", $i); ?>
-
-<form id="survey-form" method="post">
 <div class="shell">
   <div class="form">
     <div class="prog"><div class="bar"><div class="fill"></div></div></div>

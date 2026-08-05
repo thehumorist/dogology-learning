@@ -158,13 +158,30 @@ class Dogology_Learning_Survey_Blast
      * establishes that context for liff.line.me links. Mirrors how MindMap
      * builds its ebook CTA.
      */
+    /**
+     * Open inside LINE by borrowing the COMMERCE LIFF app.
+     *
+     * LINE only keeps a link in its in-app browser for liff.line.me URLs, and
+     * we have no LIFF app of our own pointing at the survey. Commerce's router
+     * already implements a same-origin redirect (page=ebook&target=/path) with
+     * open-redirect guards, built for exactly this reason — so we route through
+     * it rather than standing up another LIFF app.
+     *
+     * The signed token rides along in `target`, so identity still works even if
+     * the user's LINE is set to open links externally and LIFF never engages.
+     */
     public static function survey_url($user_id = 0)
     {
-        $url = home_url('/101-survey/');
+        $path = '/101-survey/';
         if ($user_id) {
-            $url = add_query_arg('t', Dogology_Learning_Survey::make_token($user_id), $url);
+            $path = add_query_arg('t', Dogology_Learning_Survey::make_token($user_id), $path);
         }
-        return $url;
+        $liff = trim((string) get_option('dogology_commerce_liff_id', ''));
+        if ($liff !== '') {
+            return 'https://liff.line.me/' . rawurlencode($liff)
+                 . '?page=ebook&target=' . rawurlencode($path);
+        }
+        return home_url($path);
     }
 
     /**
