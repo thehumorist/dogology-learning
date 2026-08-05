@@ -514,9 +514,18 @@ class Dogology_Learning_Survey_Blast
         return $ok ? array('ok' => true) : array('ok' => false, 'error' => 'wp_mail returned false');
     }
 
+    /**
+     * X-Line-Retry-Key must be a UUID. A bare 32-char md5 is the right length
+     * but the wrong shape, and LINE rejects the whole push with HTTP 400 — so
+     * every queued send failed while the ad-hoc samples (which pass no retry
+     * key) went through. Deterministic per row, so a retry of the same invite
+     * is still deduplicated by LINE for 24h.
+     */
     public static function retry_key($row_id)
     {
-        return substr(md5('dl-survey-' . self::table() . '-' . (int) $row_id), 0, 32);
+        $h = md5('dl-survey-' . self::table() . '-' . (int) $row_id);
+        return substr($h, 0, 8) . '-' . substr($h, 8, 4) . '-' . substr($h, 12, 4)
+             . '-' . substr($h, 16, 4) . '-' . substr($h, 20, 12);
     }
 
     public static function tick()
