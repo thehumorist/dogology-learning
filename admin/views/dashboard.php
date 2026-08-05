@@ -34,58 +34,103 @@ $courses = get_posts([
     'order'          => 'ASC',
 ]);
 
-$lesson_counts_by_course = [];
-$enrolled_by_course      = [];
-$progress_by_course      = [];
+/**
+ * Two completion measures, because they answer different questions and a
+ * curriculum change pulls them apart:
+ *
+ *   finished — completed every lesson that was PUBLISHED AT THE TIME of their
+ *     last completion. Sticky: publishing a new lesson does not retroactively
+ *     un-finish someone who finished the course as it stood for them.
+ *   up_to_date — completed every lesson published right now. Drops when the
+ *     curriculum grows; this is the "who should I nudge about the new lesson"
+ *     number, and it is the one that recovers as people come back.
+ *
+ * Reference date is the student's last COMPLETION, not last touch: merely
+ * opening the course does not write to wp_dogology_progress, and update_at is
+ * ON UPDATE CURRENT_TIMESTAMP, so only real completions move it.
+ */
+$lesson_dates_by_course = [];   // course_id => sorted list of lesson publish dates
+$enrolled_by_course     = [];
+$progress_by_course     = [];   // course_id => [ ['done'=>int, 'last'=>string|null], ... ]
 
 if ($courses) {
     $lesson_rows = $wpdb->get_results("
-        SELECT pm.meta_value AS course_id, COUNT(*) AS cnt
+        SELECT pm.meta_value AS course_id, p.post_date
         FROM {$wpdb->postmeta} pm
         JOIN {$wpdb->posts} p ON p.ID = pm.post_id
         WHERE pm.meta_key = '_dogology_parent_course'
           AND p.post_type = 'dogology_lesson'
           AND p.post_status = 'publish'
-        GROUP BY pm.meta_value
+        ORDER BY p.post_date ASC
     ");
     foreach ($lesson_rows as $row) {
-        $lesson_counts_by_course[(int) $row->course_id] = (int) $row->cnt;
+        $lesson_dates_by_course[(int) $row->course_id][] = $row->post_date;
     }
 
-    // One row per student+course: how many lessons they have marked complete.
+    // One row per student+course: lessons completed, and when they last
+    // completed one. MAX() is filtered to completed rows so the lesson_id = 0
+    // enrolment marker (completed = 0) never sets the reference date.
     $progress_rows = $wpdb->get_results("
-        SELECT course_id, user_id, SUM(completed) AS done
+        SELECT course_id,
+               user_id,
+               SUM(completed) AS done,
+               MAX(CASE WHEN completed = 1 THEN updated_at END) AS last_completion
         FROM $table_progress
         GROUP BY course_id, user_id
     ");
     foreach ($progress_rows as $row) {
         $cid = (int) $row->course_id;
         $enrolled_by_course[$cid] = ($enrolled_by_course[$cid] ?? 0) + 1;
-        $progress_by_course[$cid][] = (int) $row->done;
+        $progress_by_course[$cid][] = [
+            'done' => (int) $row->done,
+            'last' => $row->last_completion,
+        ];
     }
 }
 
-$course_stats     = [];
-$total_finishers  = 0;
+$course_stats      = [];
+$total_finishers   = 0;
+$total_up_to_date  = 0;
 foreach ($courses as $course) {
     $cid           = $course->ID;
-    $total_lessons = $lesson_counts_by_course[$cid] ?? 0;
+    $lesson_dates  = $lesson_dates_by_course[$cid] ?? [];
+    $total_lessons = count($lesson_dates);
     $enrolled      = $enrolled_by_course[$cid] ?? 0;
     $finished      = 0;
+    $up_to_date    = 0;
     $avg_pct       = 0;
 
     if ($total_lessons > 0 && $enrolled > 0) {
         $sum_pct = 0;
-        foreach ($progress_by_course[$cid] as $done) {
+        foreach ($progress_by_course[$cid] as $row) {
+            $done     = $row['done'];
             $sum_pct += min(100, ($done / $total_lessons) * 100);
+
             if ($done >= $total_lessons) {
+                $up_to_date++;
                 $finished++;
+                continue;
+            }
+
+            // How many lessons existed when they last completed one?
+            if ($done > 0 && $row['last']) {
+                $available = 0;
+                foreach ($lesson_dates as $date) {
+                    if ($date > $row['last']) {
+                        break;  // sorted ascending — everything after is newer
+                    }
+                    $available++;
+                }
+                if ($available > 0 && $done >= $available) {
+                    $finished++;
+                }
             }
         }
         $avg_pct = round($sum_pct / $enrolled, 1);
     }
 
-    $total_finishers += $finished;
+    $total_finishers  += $finished;
+    $total_up_to_date += $up_to_date;
 
     $course_stats[] = [
         'name'          => $course->post_title,
@@ -93,6 +138,7 @@ foreach ($courses as $course) {
         'total_lessons' => $total_lessons,
         'enrolled'      => $enrolled,
         'finished'      => $finished,
+        'up_to_date'    => $up_to_date,
         'avg_pct'       => $avg_pct,
     ];
 }
@@ -157,6 +203,7 @@ foreach ($courses as $course) {
                     <th style="text-align:right;">Enrolled</th>
                     <th style="text-align:right;">Finished</th>
                     <th style="text-align:right;">Finish Rate</th>
+                    <th style="text-align:right;">Up to Date</th>
                     <th style="text-align:right;">Avg Progress</th>
                 </tr>
             </thead>
@@ -173,16 +220,25 @@ foreach ($courses as $course) {
                                 ? esc_html(round(($stat['finished'] / $stat['enrolled']) * 100, 1)) . '%'
                                 : '—'; ?>
                         </td>
+                        <td style="text-align:right;<?php echo $stat['up_to_date'] < $stat['finished'] ? ' color:#f59e0b;' : ''; ?>">
+                            <?php echo number_format($stat['up_to_date']); ?>
+                            <?php if ($stat['up_to_date'] < $stat['finished']): ?>
+                                <span title="<?php echo esc_attr(($stat['finished'] - $stat['up_to_date']) . ' finishers have not done the lesson(s) added since'); ?>">&#9888;</span>
+                            <?php endif; ?>
+                        </td>
                         <td style="text-align:right;"><?php echo esc_html($stat['avg_pct']); ?>%</td>
                     </tr>
                     <?php endforeach; ?>
                 <?php else: ?>
-                    <tr><td colspan="6" style="text-align:center; color:#999;">No published courses yet.</td></tr>
+                    <tr><td colspan="7" style="text-align:center; color:#999;">No published courses yet.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
         <p style="padding: 0 16px 14px; margin: 0; color:#999; font-size:12px;">
-            "Finished" = student has completed every published lesson in that course.
+            <strong>Finished</strong> = completed every lesson that existed when they last studied,
+            so adding a lesson never un-finishes anyone.
+            <strong>Up to Date</strong> = completed every lesson published right now — the gap between
+            the two columns is who to nudge about newly added lessons.
         </p>
     </div>
 
