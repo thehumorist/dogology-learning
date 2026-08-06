@@ -46,7 +46,7 @@ if ($ctx && !empty($_GET['pv']) && !empty($_GET['pvs'])) {
     $pv = sanitize_key(wp_unslash($_GET['pv']));
     if (Dogology_Learning_Survey::verify_preview((int) $student->id, $pv, sanitize_text_field(wp_unslash($_GET['pvs'])))) {
         $ctx['segment']       = $pv;
-        $ctx['is_unfinished'] = ($pv === 'stalled' || $pv === 'not_started');
+        $ctx['is_unfinished'] = Dogology_Learning_Survey::is_unfinished_segment($pv);
     }
 }
 

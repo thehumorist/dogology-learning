@@ -397,7 +397,7 @@ $fopts   = Dogology_Learning_Survey::options('friction');
          the full set for everyone made finisher-only questions look skipped by
          someone who was never asked them. Derived from the stored segment,
          which is always the real one even under a preview override. */
-      $unf_resp = in_array($d->segment, array('stalled', 'not_started'), true);
+      $unf_resp = Dogology_Learning_Survey::is_unfinished_segment($d->segment);
       $asked = $unf_resp
           ? array('ebook_choice','friction','expectation','comeback','add','add_other','outcome','comments')
           : array('ebook_choice','applied','best_topic','liked','worth_rating','add','add_other',
@@ -448,7 +448,10 @@ $fopts   = Dogology_Learning_Survey::options('friction');
             $map = $label_maps[$qk] ?? array(); ?>
             <div style="margin-bottom:16px">
               <div style="font-weight:600;margin-bottom:6px"><?php echo esc_html($qt); ?></div>
-              <?php if (!$was_asked($qk)): ?>
+              <?php /* If the row HOLDS answers, show them — whatever the path
+                       logic thinks. Stored data must never be hidden by a
+                       display rule. */ ?>
+              <?php if (!$was_asked($qk) && empty($picked[$qk])): ?>
                 <?php echo $not_asked; ?>
               <?php elseif (empty($picked[$qk])): ?>
                 <span style="color:#b0b6bd;font-size:13px">ไม่ได้ตอบ</span>
@@ -473,7 +476,7 @@ $fopts   = Dogology_Learning_Survey::options('friction');
           foreach ($open as list($ok_key, $t, $v)): ?>
             <div style="margin-bottom:14px">
               <div style="font-weight:600;margin-bottom:4px"><?php echo esc_html($t); ?></div>
-              <?php if (!$was_asked($ok_key)): ?>
+              <?php if (!$was_asked($ok_key) && $v === null): ?>
                 <div><?php echo $not_asked; ?></div>
               <?php elseif ($v === null): ?>
                 <div style="color:#b0b6bd;font-size:13px">ไม่ได้ตอบ</div>
@@ -503,6 +506,33 @@ $fopts   = Dogology_Learning_Survey::options('friction');
               <p style="margin:0;color:#888">ไม่ได้ให้ความยินยอม — ห้ามนำไปเผยแพร่ครับ</p>
             <?php endif; ?>
           </div>
+
+          <?php /* Catch-all. Curated sections can drift out of step with the
+                   schema (twice today), so every stored column is dumped here
+                   verbatim. If a question ever stops appearing above, its data
+                   is still readable. */ ?>
+          <details style="margin-top:20px">
+            <summary style="cursor:pointer;color:#666">ข้อมูลดิบทั้งหมดของคำตอบนี้</summary>
+            <table class="dl-table" style="margin-top:10px">
+              <tbody>
+              <?php foreach ((array) $d as $col => $val): ?>
+                <?php if ($val === null || $val === '') continue; ?>
+                <tr>
+                  <td style="width:210px;color:#666;vertical-align:top"><?php echo esc_html($col); ?></td>
+                  <td style="white-space:pre-wrap;word-break:break-word"><?php
+                    echo esc_html(is_scalar($val) ? (string) $val : wp_json_encode($val, JSON_UNESCAPED_UNICODE));
+                  ?></td>
+                </tr>
+              <?php endforeach; ?>
+              <?php foreach ($picked as $qk => $ans): ?>
+                <tr>
+                  <td style="width:210px;color:#666">answers: <?php echo esc_html($qk); ?></td>
+                  <td><?php echo esc_html(implode(', ', $ans)); ?></td>
+                </tr>
+              <?php endforeach; ?>
+              </tbody>
+            </table>
+          </details>
         </div>
       </div>
       <?php endif;

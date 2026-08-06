@@ -769,6 +769,20 @@ DLCSS;
         return $n;
     }
 
+    /**
+     * Does this segment walk the shorter, unfinished path?
+     *
+     * SINGLE SOURCE OF TRUTH. This was duplicated as an inline in_array() in
+     * the template and again in the admin detail view, and when 'active' was
+     * added the copies drifted: the admin decided an active respondent was a
+     * finisher and labelled the questions they HAD answered as never asked,
+     * hiding real answers.
+     */
+    public static function is_unfinished_segment($segment)
+    {
+        return in_array($segment, array('stalled', 'not_started', 'active'), true);
+    }
+
     /** @return string|null best_topic, only if the student also ticked it in `applied`. */
     protected static function best_topic(array $payload)
     {
