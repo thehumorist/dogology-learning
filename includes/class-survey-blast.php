@@ -780,27 +780,68 @@ class Dogology_Learning_Survey_Blast
      * Uses the sticky finished definition, so publishing a lesson never
      * re-qualifies people who already got their invite.
      */
+    /**
+     * Automation is FORWARD-LOOKING. It watches for people who finish from the
+     * moment it is switched on.
+     *
+     * It used to have no such boundary: the only time test was "last activity
+     * at least 24h ago", which is true of someone who finished last year. So
+     * flipping the toggle silently invited the entire historical finished
+     * cohort — a blast, fired by a switch labelled "automate new completions",
+     * with no confirmation and no preview. Found in production 2026-08-06 when
+     * a student who finished 71 days earlier answered before any blast was sent.
+     */
+    public static function auto_since()
+    {
+        return (string) get_option('dogology_learning_survey_auto_since', '');
+    }
+
+    /** Called when the toggle is switched on: today becomes the boundary. */
+    public static function mark_auto_start()
+    {
+        update_option('dogology_learning_survey_auto_since', current_time('mysql'), false);
+    }
+
     public static function auto_scan()
     {
         if (!self::auto_enabled()) return;
         global $wpdb;
-        $delay = self::auto_delay_h() * HOUR_IN_SECONDS;
-        $now   = time();
+        $delay  = self::auto_delay_h() * HOUR_IN_SECONDS;
+        $now    = time();
+        $since  = self::auto_since();
+        // No boundary recorded (toggle predates this fix) — set it now and skip
+        // this pass rather than sweeping up the backlog.
+        if (!$since) { self::mark_auto_start(); return; }
+        $since_ts = strtotime($since);
+
+        $lines  = self::line_uids();
+        $emails = self::emails();
+        $responded = self::responded_ids();
         $queued = 0;
+
         foreach (self::audience() as $uid => $ctx) {
             if ($ctx['segment'] !== 'finished') continue;
             if (!$ctx['last_activity']) continue;
-            if (($now - strtotime($ctx['last_activity'])) < $delay) continue;
-            if (Dogology_Learning_Survey::has_responded($uid)) continue;
-            $line = $wpdb->get_var($wpdb->prepare(
-                "SELECT line_uid FROM {$wpdb->prefix}dogology_users WHERE id = %d", $uid));
-            if (!$line) continue;
+            $done_ts = strtotime($ctx['last_activity']);
+            if ($done_ts < $since_ts) continue;              // finished before automation was on
+            if (($now - $done_ts) < $delay) continue;        // still inside the delay window
+            if (isset($responded[(int) $uid])) continue;
+
+            // Same channel rule as queue(): LINE first, email for the students
+            // LINE cannot reach. This path used to drop them entirely, and also
+            // stored no email, so the failure fallback could never fire either.
+            $line  = isset($lines[(int) $uid]) ? $lines[(int) $uid] : '';
+            $email = isset($emails[(int) $uid]) ? $emails[(int) $uid] : '';
+            if ($line)                              $channel = 'line';
+            elseif ($email && is_email($email))     $channel = 'email';
+            else                                    continue;
+
             $ok = $wpdb->query($wpdb->prepare(
                 "INSERT IGNORE INTO " . self::table() . "
-                 (survey_key,user_id,line_uid,segment,source,lessons_done_at_send,
+                 (survey_key,user_id,line_uid,email,channel,segment,source,lessons_done_at_send,
                   furthest_position_at_send,status,created_at)
-                 VALUES (%s,%d,%s,'finished','auto',%d,%d,'pending',%s)",
-                Dogology_Learning_Survey::SURVEY_KEY, $uid, $line,
+                 VALUES (%s,%d,%s,%s,%s,'finished','auto',%d,%d,'pending',%s)",
+                Dogology_Learning_Survey::SURVEY_KEY, $uid, $line, $email, $channel,
                 $ctx['lessons_done'], $ctx['furthest_pos'], current_time('mysql')
             ));
             if ($ok) $queued++;

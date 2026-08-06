@@ -12,8 +12,14 @@ if (!empty($_POST['dl_survey_nonce']) && wp_verify_nonce($_POST['dl_survey_nonce
 
     if ($action === 'toggle_auto') {
         $on = !empty($_POST['auto_on']) ? '1' : '0';
+        $was_on = Dogology_Learning_Survey_Blast::auto_enabled();
         update_option(Dogology_Learning_Survey_Blast::OPT_AUTO, $on);
         update_option(Dogology_Learning_Survey_Blast::OPT_DELAY_H, max(0, (int) ($_POST['delay_h'] ?? 24)));
+        // Switching it ON sets today as the boundary, so automation covers
+        // people who finish FROM NOW, not everyone who ever finished.
+        if ($on === '1' && !$was_on) {
+            Dogology_Learning_Survey_Blast::mark_auto_start();
+        }
         $notice = $on === '1'
             ? 'เปิดการส่งอัตโนมัติแล้ว — คนที่เรียนจบใหม่จะได้รับแบบสอบถามหลังจบ ' . (int) ($_POST['delay_h'] ?? 24) . ' ชั่วโมง'
             : 'ปิดการส่งอัตโนมัติแล้ว';
@@ -186,7 +192,11 @@ $fopts   = Dogology_Learning_Survey::options('friction');
       <button class="button button-primary" style="margin-left:10px">บันทึก</button>
       <p style="color:#666;margin-bottom:0">
         สแกนทุกชั่วโมง ใช้นิยาม "เรียนจบ" แบบ sticky และบันทึกใน ledger
-        คนหนึ่งได้รับครั้งเดียวตลอดชีวิต การเพิ่มบทเรียนใหม่จะไม่ทำให้ส่งซ้ำ
+        คนหนึ่งได้รับครั้งเดียวตลอดชีวิต การเพิ่มบทเรียนใหม่จะไม่ทำให้ส่งซ้ำ<br>
+        <strong>นับเฉพาะคนที่เรียนจบตั้งแต่วันที่เปิดสวิตช์เป็นต้นไป</strong> คนที่จบไปก่อนหน้านั้นให้ใช้ Blast แทนครับ
+        <?php $as = Dogology_Learning_Survey_Blast::auto_since(); if ($as): ?>
+          <br>เปิดใช้ตั้งแต่: <?php echo esc_html($as); ?>
+        <?php endif; ?>
       </p>
     </form>
   </div>
