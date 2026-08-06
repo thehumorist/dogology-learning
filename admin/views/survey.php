@@ -364,6 +364,19 @@ $fopts   = Dogology_Learning_Survey::options('friction');
           'comeback' => 'อะไรจะทำให้กลับมาเรียนต่อ',
       );
       $txt = function ($v) { return $v !== null && $v !== '' ? $v : null; };
+
+      /* Which questions this respondent was ACTUALLY SHOWN. The two paths ask
+         different things (see templates/survey.php panel branches), so listing
+         the full set for everyone made finisher-only questions look skipped by
+         someone who was never asked them. Derived from the stored segment,
+         which is always the real one even under a preview override. */
+      $unf_resp = in_array($d->segment, array('stalled', 'not_started'), true);
+      $asked = $unf_resp
+          ? array('ebook_choice','friction','expectation','comeback','add','add_other','outcome','comments')
+          : array('ebook_choice','applied','best_topic','liked','worth_rating','add','add_other',
+                  'outcome','friction','comments','star_rating','consent');
+      $was_asked = function ($k) use ($asked) { return in_array($k, $asked, true); };
+      $not_asked = '<span style="color:#cbd2d9;font-size:13px">ไม่ได้ถาม (ไม่อยู่ในชุดคำถามของกลุ่มนี้)</span>';
       ?>
       <div class="dl-card" style="margin-bottom:20px;border:2px solid #00AB8E">
         <div class="dl-card-header" style="display:flex;justify-content:space-between;align-items:center">
@@ -391,8 +404,8 @@ $fopts   = Dogology_Learning_Survey::options('friction');
           </div>
 
           <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:18px">
-            <div><strong style="color:#f59e0b;font-size:18px"><?php echo $d->star_rating ? str_repeat('★', (int) $d->star_rating) : '—'; ?></strong><div style="font-size:11px;color:#888">ให้คะแนนโดยรวม</div></div>
-            <div><strong style="font-size:18px"><?php echo $d->worth_rating ? (int) $d->worth_rating . '/5' : '—'; ?></strong><div style="font-size:11px;color:#888">ความคุ้มค่า</div></div>
+            <div><strong style="color:#f59e0b;font-size:18px"><?php echo $was_asked('star_rating') ? ($d->star_rating ? str_repeat('★', (int) $d->star_rating) : '—') : '·'; ?></strong><div style="font-size:11px;color:#888">ให้คะแนนโดยรวม<?php echo $was_asked('star_rating') ? '' : ' (ไม่ได้ถาม)'; ?></div></div>
+            <div><strong style="font-size:18px"><?php echo $was_asked('worth_rating') ? ($d->worth_rating ? (int) $d->worth_rating . '/5' : '—') : '·'; ?></strong><div style="font-size:11px;color:#888">ความคุ้มค่า<?php echo $was_asked('worth_rating') ? '' : ' (ไม่ได้ถาม)'; ?></div></div>
             <div><strong style="font-size:15px"><?php echo esc_html($d->ebook_choice ?: '—'); ?></strong>
               <div style="font-size:11px;color:<?php echo $d->ebook_granted_at ? '#16a34a' : '#f59e0b'; ?>">
                 <?php echo $d->ebook_choice ? ($d->ebook_granted_at ? 'ส่งแล้ว ' . esc_html($d->ebook_granted_at) : 'ยังไม่ได้ส่ง') : 'ไม่ได้เลือก'; ?>
@@ -408,7 +421,9 @@ $fopts   = Dogology_Learning_Survey::options('friction');
             $map = $label_maps[$qk] ?? array(); ?>
             <div style="margin-bottom:16px">
               <div style="font-weight:600;margin-bottom:6px"><?php echo esc_html($qt); ?></div>
-              <?php if (empty($picked[$qk])): ?>
+              <?php if (!$was_asked($qk)): ?>
+                <?php echo $not_asked; ?>
+              <?php elseif (empty($picked[$qk])): ?>
                 <span style="color:#b0b6bd;font-size:13px">ไม่ได้ตอบ</span>
               <?php else: foreach ($picked[$qk] as $ans): ?>
                 <span style="display:inline-block;background:rgba(0,171,142,.08);color:#0F766E;
@@ -420,17 +435,20 @@ $fopts   = Dogology_Learning_Survey::options('friction');
 
           <?php
           $open = array(
-              'แล้วเรื่องไหนได้ผลที่สุด' => $d->best_topic ? (($topics[$d->best_topic]['label'] ?? $d->best_topic)
-                    . ($d->best_reason ? ' — ' . $d->best_reason : '')) : null,
-              'ตอนซื้อคาดหวังอะไร'      => $txt($d->expectation),
-              'ผลลัพธ์กับหมา'           => $txt($d->outcome),
-              'อยากให้เพิ่ม (อื่น ๆ)'    => $txt($d->add_other),
-              'ความเห็นเพิ่มเติม'        => $txt($d->comments),
+              array('best_topic', 'แล้วเรื่องไหนได้ผลที่สุด', $d->best_topic
+                    ? (($topics[$d->best_topic]['label'] ?? $d->best_topic)
+                       . ($d->best_reason ? ' — ' . $d->best_reason : '')) : null),
+              array('expectation', 'ตอนซื้อคาดหวังอะไร',   $txt($d->expectation)),
+              array('outcome',     'ผลลัพธ์กับหมา',        $txt($d->outcome)),
+              array('add_other',   'อยากให้เพิ่ม (อื่น ๆ)', $txt($d->add_other)),
+              array('comments',    'ความเห็นเพิ่มเติม',     $txt($d->comments)),
           );
-          foreach ($open as $t => $v): ?>
+          foreach ($open as list($ok_key, $t, $v)): ?>
             <div style="margin-bottom:14px">
               <div style="font-weight:600;margin-bottom:4px"><?php echo esc_html($t); ?></div>
-              <?php if ($v === null): ?>
+              <?php if (!$was_asked($ok_key)): ?>
+                <div><?php echo $not_asked; ?></div>
+              <?php elseif ($v === null): ?>
                 <div style="color:#b0b6bd;font-size:13px">ไม่ได้ตอบ</div>
               <?php else: ?>
                 <div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:12px 14px;
@@ -452,6 +470,8 @@ $fopts   = Dogology_Learning_Survey::options('friction');
                   </a>
                 <?php endif; ?>
               <?php endif; ?>
+            <?php elseif (!$was_asked('consent')): ?>
+              <p style="margin:0;color:#cbd2d9">ไม่ได้ถาม (กลุ่มที่ยังเรียนไม่จบไม่ถูกถามเรื่องนี้)</p>
             <?php else: ?>
               <p style="margin:0;color:#888">ไม่ได้ให้ความยินยอม — ห้ามนำไปเผยแพร่ครับ</p>
             <?php endif; ?>
