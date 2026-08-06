@@ -199,9 +199,12 @@ class Dogology_Learning_Survey_Blast
             "INSERT IGNORE INTO $t
              (survey_key,user_id,line_uid,email,channel,segment,source,lessons_done_at_send,
               furthest_position_at_send,status,created_at)
-             VALUES (%s,%d,%s,%s,%s,%s,'chase',%d,%d,'pending',%s)",
+             VALUES (%s,%d,%s,%s,%s,%s,%s,%d,%d,'pending',%s)",
             Dogology_Learning_Survey::SURVEY_KEY, $user_id, $row->line_uid, $row->email,
-            $row->channel, $row->segment, $ctx['lessons_done'], $ctx['furthest_pos'],
+            $row->channel, $row->segment,
+            // Mis-cued by the auto backlog bug? Owe them the real message.
+            ($row->source === 'auto' ? 'blast' : 'chase'),
+            $ctx['lessons_done'], $ctx['furthest_pos'],
             current_time('mysql')
         ));
         if (!$ok) return array('ok' => false, 'error' => 'insert failed: ' . $wpdb->last_error);
@@ -265,6 +268,21 @@ class Dogology_Learning_Survey_Blast
             $in = implode(',', array_fill(0, count($segments), '%s'));
             $args = array_merge(array(Dogology_Learning_Survey::SURVEY_KEY), $segments);
 
+            // Who got the WRONG message the first time. The auto variant
+            // congratulates someone on having just finished; the automation
+            // backlog bug sent it to people who finished months ago. They were
+            // never shown the message actually written for them, so the
+            // follow-up owes them that one — not a reminder about a message
+            // that missed.
+            $miscued = $wpdb->get_col($wpdb->prepare(
+                "SELECT i.user_id FROM $t i
+                 WHERE i.survey_key = %s AND i.segment IN ($in)
+                   AND i.status = 'sent' AND i.source = 'auto'
+                   AND NOT EXISTS (SELECT 1 FROM $rt r
+                                   WHERE r.user_id = i.user_id AND r.survey_key = i.survey_key)",
+                $args
+            ));
+
             $cleared = (int) $wpdb->query($wpdb->prepare(
                 "DELETE i FROM $t i
                  WHERE i.survey_key = %s
@@ -276,9 +294,21 @@ class Dogology_Learning_Survey_Blast
             ));
 
             $r = self::queue($segments, 'chase', $email);
+
+            // Re-mark those rows so tick() renders the segment's own variant
+            // (the blast copy) instead of the chase reminder.
+            if ($miscued) {
+                $ids = implode(',', array_map('intval', $miscued));
+                $wpdb->query($wpdb->prepare(
+                    "UPDATE $t SET source = 'blast'
+                     WHERE survey_key = %s AND status = 'pending' AND user_id IN ($ids)",
+                    Dogology_Learning_Survey::SURVEY_KEY
+                ));
+            }
             update_option(self::OPT_LAST, sprintf(
-                '%s — ส่งซ้ำ: ปลดล็อก %d คน, เข้าคิว %d (อีเมล %d) [%s]',
-                current_time('mysql'), $cleared, $r['added'], $r['emailed'], implode(',', $segments)
+                '%s — ส่งซ้ำ: ปลดล็อก %d คน, เข้าคิว %d (อีเมล %d), ส่งข้อความเดิมแทนข้อความเตือน %d คน [%s]',
+                current_time('mysql'), $cleared, $r['added'], $r['emailed'],
+                count($miscued), implode(',', $segments)
             ), false);
         } finally {
             $wpdb->query("SELECT RELEASE_LOCK('dogology_survey_chase')");
