@@ -400,16 +400,21 @@ $fopts   = Dogology_Learning_Survey::options('friction');
             </div>
           </div>
 
-          <?php foreach ($q_titles as $qk => $qt):
-            if (empty($picked[$qk])) continue;
+          <?php
+          /* EVERY question we asked, answered or not. Skipping the empty ones
+             made "they skipped it" indistinguishable from "we never asked",
+             which is the difference between a weak signal and no signal. */
+          foreach ($q_titles as $qk => $qt):
             $map = $label_maps[$qk] ?? array(); ?>
             <div style="margin-bottom:16px">
               <div style="font-weight:600;margin-bottom:6px"><?php echo esc_html($qt); ?></div>
-              <?php foreach ($picked[$qk] as $ans): ?>
+              <?php if (empty($picked[$qk])): ?>
+                <span style="color:#b0b6bd;font-size:13px">ไม่ได้ตอบ</span>
+              <?php else: foreach ($picked[$qk] as $ans): ?>
                 <span style="display:inline-block;background:rgba(0,171,142,.08);color:#0F766E;
                              border-radius:999px;padding:4px 12px;margin:0 6px 6px 0;font-size:13px">
                   <?php echo esc_html($map[$ans] ?? $ans); ?></span>
-              <?php endforeach; ?>
+              <?php endforeach; endif; ?>
             </div>
           <?php endforeach; ?>
 
@@ -422,11 +427,15 @@ $fopts   = Dogology_Learning_Survey::options('friction');
               'อยากให้เพิ่ม (อื่น ๆ)'    => $txt($d->add_other),
               'ความเห็นเพิ่มเติม'        => $txt($d->comments),
           );
-          foreach ($open as $t => $v): if ($v === null) continue; ?>
+          foreach ($open as $t => $v): ?>
             <div style="margin-bottom:14px">
               <div style="font-weight:600;margin-bottom:4px"><?php echo esc_html($t); ?></div>
-              <div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:12px 14px;
-                          white-space:pre-wrap;line-height:1.7"><?php echo esc_html($v); ?></div>
+              <?php if ($v === null): ?>
+                <div style="color:#b0b6bd;font-size:13px">ไม่ได้ตอบ</div>
+              <?php else: ?>
+                <div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:12px 14px;
+                            white-space:pre-wrap;line-height:1.7"><?php echo esc_html($v); ?></div>
+              <?php endif; ?>
             </div>
           <?php endforeach; ?>
 
