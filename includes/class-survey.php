@@ -33,11 +33,11 @@ class Dogology_Learning_Survey
     const SURVEY_VERSION = 1;
     const COURSE_ID      = 5683;
 
-    /* A student is only "stalled" once BOTH are true: they have not touched
-       the course for a while, and they have owned it long enough to have had
-       a fair chance. See context_for(). */
-    const ACTIVE_IDLE_DAYS  = 14;
-    const ACTIVE_OWNED_DAYS = 21;
+    /* A student is only "stalled" once BOTH are true: untouched for a full
+       month, and owned for a full month. Operator's rule — two weeks of
+       quiet is a busy fortnight, not someone who gave up. See context_for(). */
+    const ACTIVE_IDLE_DAYS  = 30;
+    const ACTIVE_OWNED_DAYS = 30;
 
     /** Plain-language topics shown to students, mapped to the lessons they stand for. */
     public static function topics()
