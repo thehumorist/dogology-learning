@@ -33,6 +33,7 @@ class Dogology_Learning_Survey_Blast
     const OPT_SCHED_AT = 'dogology_learning_survey_blast_at';
     const OPT_SCHED_SEG= 'dogology_learning_survey_blast_segments';
     const OPT_SCHED_EM = 'dogology_learning_survey_blast_email';
+    const OPT_LAST     = 'dogology_learning_survey_blast_last';
 
     public static function table() { global $wpdb; return $wpdb->prefix . 'dogology_survey_invites'; }
 
@@ -81,6 +82,13 @@ class Dogology_Learning_Survey_Blast
         // missed cron, a plugin reactivation), the launch still happens rather
         // than silently never firing.
         add_action(self::AUTO_HOOK, array(__CLASS__, 'run_scheduled'));
+        // ...and on any admin page load, because BOTH hooks above are WP-cron
+        // events and share its weakness: DISABLE_WP_CRON, a dead system cron,
+        // or simply no traffic at 19:00 means neither ever runs. Opening
+        // wp-admin is then enough to recover the send.
+        if (is_admin()) {
+            add_action('admin_init', array(__CLASS__, 'run_scheduled'));
+        }
     }
 
     /* ------------------------------------------------------------------
@@ -113,6 +121,7 @@ class Dogology_Learning_Survey_Blast
         if ($utc <= time()) return array('ok' => false, 'error' => 'เวลาที่ตั้งอยู่ในอดีตแล้ว');
 
         self::cancel_scheduled();
+        delete_option(self::OPT_LAST);   // stale outcome note must not sit under a fresh schedule
         update_option(self::OPT_SCHED_AT,  gmdate('Y-m-d H:i:s', $ts), false);
         update_option(self::OPT_SCHED_SEG, implode(',', $segments), false);
         update_option(self::OPT_SCHED_EM,  $use_email ? '1' : '0', false);
@@ -138,29 +147,62 @@ class Dogology_Learning_Survey_Blast
      */
     public static function run_scheduled()
     {
+        global $wpdb;
+
         $at = self::scheduled_at();
         if (!$at) return;
-        if (strtotime($at) > strtotime(current_time('mysql'))) return; // not due yet
 
-        $segments = self::scheduled_segments();
-        $email    = self::scheduled_email();
-        self::cancel_scheduled();
-        if (!$segments) return;
+        $due = strtotime($at);
+        $now = strtotime(current_time('mysql'));
+        if ($due > $now) return;                       // not due yet
 
-        // Refuse to launch while the response-wiping test mode is on. Nothing
-        // good happens when a debug switch is live during a real send.
-        if (class_exists('Dogology_Learning_Survey') && Dogology_Learning_Survey::test_mode()) {
-            error_log('[dogology-survey] scheduled blast ABORTED: test mode is on');
-            update_option('dogology_learning_survey_blast_last', 'aborted: test mode was on', false);
+        // Refuse a stale launch. If the site was down, cron stalled, or the
+        // plugin was off for a day, the first request after recovery would
+        // otherwise blast 160 people at 3am with time-sensitive copy.
+        if ($now - $due > 6 * HOUR_IN_SECONDS) {
+            self::cancel_scheduled();
+            update_option(self::OPT_LAST, sprintf('%s — ไม่ได้ยิง: เลยเวลามา %d ชม. (ตั้งเวลาใหม่ครับ)',
+                current_time('mysql'), (int) round(($now - $due) / HOUR_IN_SECONDS)), false);
             return;
         }
 
-        $r = self::queue($segments, 'blast', $email);
-        update_option('dogology_learning_survey_blast_last', sprintf(
-            '%s — queued %d (email %d), skipped %d, unreachable %d [%s]',
-            current_time('mysql'), $r['added'], $r['emailed'], $r['skipped'], $r['noline'],
-            implode(',', $segments)
-        ), false);
+        // Test mode DEFERS, it does not cancel. Clearing the schedule here (as
+        // the first version did) meant a forgotten debug toggle silently ate
+        // the send with nothing left to show what happened.
+        if (class_exists('Dogology_Learning_Survey') && Dogology_Learning_Survey::test_mode()) {
+            error_log('[dogology-survey] scheduled blast deferred: test mode is on');
+            update_option(self::OPT_LAST, current_time('mysql')
+                . ' — เลื่อนออกไป: โหมดทดสอบเปิดอยู่ (จะลองใหม่ทุก 15 นาที)', false);
+            if (!wp_next_scheduled(self::SCHED_HOOK)) {
+                wp_schedule_single_event(time() + 900, self::SCHED_HOOK);
+            }
+            return;
+        }
+
+        // A real claim, not just "clear the option first". The single event and
+        // the hourly re-check can land on two workers in the same second; both
+        // would read, both would cancel, both would queue. The ledger's UNIQUE
+        // key stops any double-send, but the loser would overwrite the operator's
+        // only record of the outcome with "queued 0".
+        if (!$wpdb->get_var("SELECT GET_LOCK('dogology_survey_sched', 0)")) return;
+        try {
+            $at = self::scheduled_at();                // re-read inside the lock
+            if (!$at || strtotime($at) > $now) return;
+
+            $segments = self::scheduled_segments();
+            $email    = self::scheduled_email();
+            self::cancel_scheduled();
+            if (!$segments) return;
+
+            $r = self::queue($segments, 'blast', $email);
+            update_option(self::OPT_LAST, sprintf(
+                '%s — เข้าคิว %d คน (อีเมล %d), ข้าม %d, ติดต่อไม่ได้ %d [%s]',
+                current_time('mysql'), $r['added'], $r['emailed'], $r['skipped'], $r['noline'],
+                implode(',', $segments)
+            ), false);
+        } finally {
+            $wpdb->query("SELECT RELEASE_LOCK('dogology_survey_sched')");
+        }
     }
 
     public static function auto_enabled()  { return get_option(self::OPT_AUTO, '0') === '1'; }

@@ -217,11 +217,22 @@ $fopts   = Dogology_Learning_Survey::options('friction');
 
   <div class="dl-card" style="margin-bottom:20px">
     <div class="dl-card-header"><h3 class="dl-card-title">ยิง Blast</h3></div>
+    <?php /* The confirm belongs to the LAUNCH button alone. On the form it also
+             fired for schedule / cancel / retry and for Enter in the date field,
+             none of which send anything — which both misleads and trains the
+             operator to dismiss it on the one press that matters. */ ?>
     <form method="post" style="padding:16px"
-          onsubmit="return confirm('ยืนยันส่ง blast ให้กลุ่มที่เลือก?');">
+          onsubmit="return (!this.dl_launch_pressed || confirm('ยืนยันส่ง blast ให้กลุ่มที่เลือกเดี๋ยวนี้?'));">
       <?php wp_nonce_field('dl_survey', 'dl_survey_nonce'); ?>
       <input type="hidden" name="dl_action" value="launch">
       <?php
+      $sched_at_pre  = Dogology_Learning_Survey_Blast::scheduled_at();
+      $sched_seg_pre = Dogology_Learning_Survey_Blast::scheduled_segments();
+      // With a schedule saved, the checkboxes must show what is ACTUALLY set.
+      // They used to render the finished+near default regardless, so nudging
+      // the time and re-saving silently rewrote the audience.
+      $def_seg   = $sched_at_pre && $sched_seg_pre ? $sched_seg_pre : array('finished', 'near');
+      $def_email = $sched_at_pre ? Dogology_Learning_Survey_Blast::scheduled_email() : true;
       $labels = array(
         'finished'    => 'เรียนจบแล้ว (ได้อีบุ๊ก)',
         'near'        => 'เกือบจบ 76-99% (ได้อีบุ๊ก)',
@@ -231,7 +242,7 @@ $fopts   = Dogology_Learning_Survey::options('friction');
       foreach ($labels as $seg => $lbl): ?>
         <label style="display:block;margin-bottom:7px">
           <input type="checkbox" name="segments[]" value="<?php echo esc_attr($seg); ?>"
-            <?php checked(in_array($seg, array('finished', 'near'), true)); ?>>
+            <?php checked(in_array($seg, $def_seg, true)); ?>>
           <?php echo esc_html($lbl); ?>
           <strong>(<?php echo (int) ($counts[$seg] ?? 0); ?> คน)</strong>
           <?php $nl = (int) ($counts['no_line_by_segment'][$seg] ?? 0); if ($nl): ?>
@@ -240,7 +251,7 @@ $fopts   = Dogology_Learning_Survey::options('friction');
         </label>
       <?php endforeach; ?>
       <label style="display:block;margin:12px 0 4px">
-        <input type="checkbox" name="use_email" value="1" checked>
+        <input type="checkbox" name="use_email" value="1" <?php checked($def_email); ?>>
         ส่งอีเมลให้คนที่ไม่มี LINE (ข้อความเดียวกับ flex)
       </label>
       <p style="color:#666">
@@ -272,12 +283,12 @@ $fopts   = Dogology_Learning_Survey::options('friction');
           <p style="color:#b32d2e;margin:6px 0 0"><strong>โหมดทดสอบเปิดอยู่ — ระบบจะไม่ยิงตามเวลาที่ตั้งไว้ ปิดก่อนครับ</strong></p>
         <?php endif; ?>
       <?php endif; ?>
-      <?php $last = get_option('dogology_learning_survey_blast_last', ''); if ($last): ?>
+      <?php $last = get_option(Dogology_Learning_Survey_Blast::OPT_LAST, ''); if ($last): ?>
         <p style="color:#666;margin:6px 0 0">ครั้งล่าสุด: <?php echo esc_html($last); ?></p>
       <?php endif; ?>
 
       <p style="margin:16px 0 6px"><strong>หรือยิงเดี๋ยวนี้</strong></p>
-      <button class="button button-primary">เข้าคิวและเริ่มส่ง</button>
+      <button class="button button-primary" onclick="this.form.dl_launch_pressed=1">เข้าคิวและเริ่มส่ง</button>
       <?php if ($failed): ?>
         <button class="button" name="dl_action" value="retry"
           formnovalidate>ส่งใหม่เฉพาะที่ล้มเหลว (<?php echo (int) $failed; ?>)</button>
