@@ -85,6 +85,21 @@ if (!empty($_POST['dl_survey_nonce']) && wp_verify_nonce($_POST['dl_survey_nonce
             : 'ตั้งเวลาไม่สำเร็จ: ' . ($res['error'] ?? 'unknown');
     }
 
+    if ($action === 'schedule_chase') {
+        $res = Dogology_Learning_Survey_Blast::schedule_chase(
+            sanitize_text_field(str_replace('T', ' ', (string) ($_POST['chase_at'] ?? ''))),
+            array_map('sanitize_key', (array) ($_POST['chase_segments'] ?? array()))
+        );
+        $notice = !empty($res['ok'])
+            ? 'ตั้งเวลาส่งซ้ำไว้ที่ ' . $res['at'] . ' น. แล้ว (เฉพาะคนที่ยังไม่ตอบ)'
+            : 'ตั้งเวลาส่งซ้ำไม่สำเร็จ: ' . ($res['error'] ?? 'unknown');
+    }
+
+    if ($action === 'unschedule_chase') {
+        Dogology_Learning_Survey_Blast::cancel_chase();
+        $notice = 'ยกเลิกการส่งซ้ำแล้ว';
+    }
+
     if ($action === 'unschedule') {
         Dogology_Learning_Survey_Blast::cancel_scheduled();
         $notice = 'ยกเลิกเวลายิงที่ตั้งไว้แล้ว';
@@ -490,6 +505,40 @@ $fopts   = Dogology_Learning_Survey::options('friction');
       </div>
       <?php endif;
   endif; ?>
+
+  <div class="dl-card" style="margin-bottom:20px">
+    <div class="dl-card-header"><h3 class="dl-card-title">ส่งซ้ำคนที่ยังไม่ตอบ (ครั้งเดียว)</h3></div>
+    <form method="post" style="padding:16px">
+      <?php wp_nonce_field('dl_survey', 'dl_survey_nonce'); ?>
+      <input type="hidden" name="dl_action" value="schedule_chase">
+      <?php
+      $chase_at  = Dogology_Learning_Survey_Blast::chase_at();
+      $chase_seg = Dogology_Learning_Survey_Blast::chase_segments();
+      $chase_def = $chase_at && $chase_seg ? $chase_seg : array('finished', 'near', 'stalled');
+      $chase_dt  = $chase_at
+          ? date('Y-m-d\TH:i', strtotime($chase_at))
+          : date('Y-m-d\T19:30', strtotime('+7 days', strtotime(current_time('mysql'))));
+      foreach ($labels as $seg => $lbl): ?>
+        <label style="display:block;margin-bottom:7px">
+          <input type="checkbox" name="chase_segments[]" value="<?php echo esc_attr($seg); ?>"
+            <?php checked(in_array($seg, $chase_def, true)); ?>>
+          <?php echo esc_html($lbl); ?>
+        </label>
+      <?php endforeach; ?>
+      <input type="datetime-local" name="chase_at" value="<?php echo esc_attr($chase_dt); ?>">
+      <button class="button">บันทึกเวลาส่งซ้ำ</button>
+      <?php if ($chase_at): ?>
+        <button class="button-link" name="dl_action" value="unschedule_chase" formnovalidate
+                style="color:#b32d2e;margin-left:8px">ยกเลิก</button>
+        <p style="color:#0F766E;margin:8px 0 0">ตั้งไว้: <strong><?php
+          echo esc_html(date('d/m/Y H:i', strtotime($chase_at))); ?> น.</strong></p>
+      <?php endif; ?>
+      <p style="color:#666;margin-bottom:0">
+        ส่งเฉพาะคนที่ได้รับข้อความไปแล้วแต่ยังไม่ตอบ คนที่ตอบแล้วจะไม่ได้รับซ้ำ
+        ใช้ข้อความสั้นแบบเตือนความจำ ไม่ใช่ข้อความเดิม และส่งครั้งเดียวจบ
+      </p>
+    </form>
+  </div>
 
   <div class="dl-card">
     <div class="dl-card-header"><h3 class="dl-card-title">คำตอบล่าสุด</h3></div>

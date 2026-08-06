@@ -35,6 +35,13 @@ class Dogology_Learning_Survey_Blast
     const OPT_SCHED_EM = 'dogology_learning_survey_blast_email';
     const OPT_LAST     = 'dogology_learning_survey_blast_last';
 
+    /* Follow-up ("chase"): one reminder to people who were invited and never
+       answered. Deliberately a SEPARATE hook and copy variant — resending the
+       original message reads as a system that forgot it already spoke to you. */
+    const CHASE_HOOK    = 'dogology_survey_chase_launch';
+    const OPT_CHASE_AT  = 'dogology_learning_survey_chase_at';
+    const OPT_CHASE_SEG = 'dogology_learning_survey_chase_segments';
+
     public static function table() { global $wpdb; return $wpdb->prefix . 'dogology_survey_invites'; }
 
     public static function install()
@@ -78,6 +85,9 @@ class Dogology_Learning_Survey_Blast
         }
 
         add_action(self::SCHED_HOOK, array(__CLASS__, 'run_scheduled'));
+        add_action(self::CHASE_HOOK, array(__CLASS__, 'run_chase'));
+        add_action(self::AUTO_HOOK,  array(__CLASS__, 'run_chase'));
+        if (is_admin()) add_action('admin_init', array(__CLASS__, 'run_chase'));
         // Also checked on the hourly scan: if a single event is ever lost (a
         // missed cron, a plugin reactivation), the launch still happens rather
         // than silently never firing.
@@ -128,6 +138,104 @@ class Dogology_Learning_Survey_Blast
         wp_schedule_single_event($utc, self::SCHED_HOOK);
 
         return array('ok' => true, 'at' => gmdate('Y-m-d H:i', $ts));
+    }
+
+    /* ---- follow-up -------------------------------------------------- */
+
+    public static function chase_at() { return (string) get_option(self::OPT_CHASE_AT, ''); }
+    public static function chase_segments()
+    {
+        $v = get_option(self::OPT_CHASE_SEG, '');
+        return array_values(array_filter(array_map('sanitize_key', explode(',', (string) $v))));
+    }
+
+    public static function schedule_chase($when_site, array $segments)
+    {
+        $segments = array_values(array_filter(array_map('sanitize_key', $segments)));
+        if (!$segments) return array('ok' => false, 'error' => 'ยังไม่ได้เลือกกลุ่ม');
+        $ts = strtotime($when_site);
+        if (!$ts) return array('ok' => false, 'error' => 'รูปแบบวันเวลาไม่ถูกต้อง');
+        $utc = $ts - (int) (get_option('gmt_offset') * HOUR_IN_SECONDS);
+        if ($utc <= time()) return array('ok' => false, 'error' => 'เวลาที่ตั้งอยู่ในอดีตแล้ว');
+
+        self::cancel_chase();
+        update_option(self::OPT_CHASE_AT,  gmdate('Y-m-d H:i:s', $ts), false);
+        update_option(self::OPT_CHASE_SEG, implode(',', $segments), false);
+        wp_schedule_single_event($utc, self::CHASE_HOOK);
+        return array('ok' => true, 'at' => gmdate('Y-m-d H:i', $ts));
+    }
+
+    public static function cancel_chase()
+    {
+        while ($ts = wp_next_scheduled(self::CHASE_HOOK)) {
+            wp_unschedule_event($ts, self::CHASE_HOOK);
+        }
+        delete_option(self::OPT_CHASE_AT);
+        delete_option(self::OPT_CHASE_SEG);
+    }
+
+    /**
+     * Re-invite people who were sent an invite and never answered.
+     *
+     * The ledger's UNIQUE key exists precisely to stop a second send, so this
+     * clears the rows for non-responders first — the only sanctioned way past
+     * it. Responders are never touched, and neither is anyone whose invite is
+     * still pending or failed (they have not actually been asked yet).
+     */
+    public static function run_chase()
+    {
+        global $wpdb;
+        $at = self::chase_at();
+        if (!$at) return;
+
+        $due = strtotime($at);
+        $now = strtotime(current_time('mysql'));
+        if ($due > $now) return;
+        if ($now - $due > 6 * HOUR_IN_SECONDS) {
+            self::cancel_chase();
+            update_option(self::OPT_LAST, current_time('mysql')
+                . ' — ไม่ได้ส่งซ้ำ: เลยเวลามานาน (ตั้งใหม่ครับ)', false);
+            return;
+        }
+        if (class_exists('Dogology_Learning_Survey') && Dogology_Learning_Survey::test_mode()) {
+            if (!wp_next_scheduled(self::CHASE_HOOK)) {
+                wp_schedule_single_event(time() + 900, self::CHASE_HOOK);
+            }
+            return;
+        }
+
+        if (!$wpdb->get_var("SELECT GET_LOCK('dogology_survey_chase', 0)")) return;
+        try {
+            $at = self::chase_at();
+            if (!$at || strtotime($at) > $now) return;
+            $segments = self::chase_segments();
+            $email    = self::scheduled_email();
+            self::cancel_chase();
+            if (!$segments) return;
+
+            $t  = self::table();
+            $rt = Dogology_Learning_Survey::responses_table();
+            $in = implode(',', array_fill(0, count($segments), '%s'));
+            $args = array_merge(array(Dogology_Learning_Survey::SURVEY_KEY), $segments);
+
+            $cleared = (int) $wpdb->query($wpdb->prepare(
+                "DELETE i FROM $t i
+                 WHERE i.survey_key = %s
+                   AND i.segment IN ($in)
+                   AND i.status = 'sent'
+                   AND NOT EXISTS (SELECT 1 FROM $rt r
+                                   WHERE r.user_id = i.user_id AND r.survey_key = i.survey_key)",
+                $args
+            ));
+
+            $r = self::queue($segments, 'chase', $email);
+            update_option(self::OPT_LAST, sprintf(
+                '%s — ส่งซ้ำ: ปลดล็อก %d คน, เข้าคิว %d (อีเมล %d) [%s]',
+                current_time('mysql'), $cleared, $r['added'], $r['emailed'], implode(',', $segments)
+            ), false);
+        } finally {
+            $wpdb->query("SELECT RELEASE_LOCK('dogology_survey_chase')");
+        }
     }
 
     public static function cancel_scheduled()
@@ -445,7 +553,23 @@ class Dogology_Learning_Survey_Blast
      */
     public static function copy($segment)
     {
-        if ($segment === 'finished' || $segment === 'near') {
+        if ($segment === 'chase') {
+            // DRAFT COPY — pending Nattawut's approval. Short on purpose: they
+            // already read the long version and chose not to answer, so the
+            // reminder's job is to be easy to dismiss or easy to finish, not to
+            // re-argue the case. No guilt, and it says outright that ignoring
+            // it is fine.
+            $hero  = 'ยังเปิดให้ตอบอยู่ครับ';
+            $sub   = 'ถ้ามีเวลาสัก 2 นาที';
+            $title = 'แบบสอบถามคอร์ส Dogology 101';
+            $body  = "ส่งมาย้ำอีกครั้งเดียวครับ เผื่อข้อความก่อนหน้านี้หายไปในแชท\n\n"
+                   . "เรากำลังปรับปรุงคอร์สครั้งใหญ่ และอยากได้ความเห็นจากคนที่เรียนจริง ๆ "
+                   . "ตอบสั้น ๆ ก็มีค่ามากครับ\n\n"
+                   . "อีบุ๊กเจาะลึก 1 เล่มยังรออยู่เหมือนเดิม เลือกได้เลยครับ";
+            $cta   = 'เปิดแบบสอบถาม';
+            $note  = 'ถ้าไม่สะดวกตอบ ไม่ต้องกังวลนะครับ เราจะไม่รบกวนอีก';
+            $c1    = '#0F766E'; $c2 = '#0076BA';
+        } elseif ($segment === 'finished' || $segment === 'near') {
             $hero  = 'เนื้อหาใหม่กำลังมาเพิ่ม';
             $sub   = 'และเราอยากฟังความเห็นจากคุณก่อน';
             $title = 'ยังจำคอร์ส 101 ได้ไหมครับ';
@@ -735,7 +859,10 @@ class Dogology_Learning_Survey_Blast
                     array('id' => $r->id, 'status' => 'pending'));
                 if (!$claimed) continue;
 
-                $seg = ($r->source === 'auto') ? 'auto' : $r->segment;
+                // The copy variant follows the SOURCE first: a chase row must
+                // send the reminder, not a verbatim repeat of the invite the
+                // recipient already ignored.
+                $seg = in_array($r->source, array('auto', 'chase'), true) ? $r->source : $r->segment;
                 if (($r->channel ?? 'line') === 'email') {
                     $res = self::send_email($r->email, $seg, (int) $r->user_id);
                 } else {
