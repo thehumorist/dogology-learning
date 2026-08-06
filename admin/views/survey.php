@@ -67,6 +67,23 @@ if (!empty($_POST['dl_survey_nonce']) && wp_verify_nonce($_POST['dl_survey_nonce
         }
     }
 
+    if ($action === 'schedule') {
+        $segments = array_map('sanitize_key', (array) ($_POST['segments'] ?? array()));
+        $res = Dogology_Learning_Survey_Blast::schedule_launch(
+            sanitize_text_field(str_replace('T', ' ', (string) ($_POST['blast_at'] ?? ''))),
+            $segments,
+            !empty($_POST['use_email'])
+        );
+        $notice = !empty($res['ok'])
+            ? 'ตั้งเวลายิงไว้ที่ ' . $res['at'] . ' น. แล้ว (กลุ่ม: ' . implode(', ', $segments) . ')'
+            : 'ตั้งเวลาไม่สำเร็จ: ' . ($res['error'] ?? 'unknown');
+    }
+
+    if ($action === 'unschedule') {
+        Dogology_Learning_Survey_Blast::cancel_scheduled();
+        $notice = 'ยกเลิกเวลายิงที่ตั้งไว้แล้ว';
+    }
+
     if ($action === 'retry') {
         global $wpdb;
         // Also recover rows stranded in 'sending' — the process died between
@@ -230,6 +247,36 @@ $fopts   = Dogology_Learning_Survey::options('friction');
         รวมทั้งหมดที่ไม่มี LINE ID <strong><?php echo (int) $counts['no_line']; ?></strong> คน — ติ๊กด้านบนเพื่อส่งทางอีเมลแทน<br>
         กดซ้ำได้ปลอดภัย ระบบข้ามคนที่อยู่ในคิวหรือตอบไปแล้วเสมอ
       </p>
+      <?php
+      $sched_at  = Dogology_Learning_Survey_Blast::scheduled_at();
+      $sched_seg = Dogology_Learning_Survey_Blast::scheduled_segments();
+      // Default the picker to the next 19:00 site-time that is still ahead —
+      // evening beats lunch for a survey people answer with the dog present.
+      $default = date('Y-m-d\T19:00', strtotime(
+          (date('H', strtotime(current_time('mysql'))) >= 19 ? 'tomorrow' : 'today'),
+          strtotime(current_time('mysql'))));
+      ?>
+      <p style="margin:14px 0 6px"><strong>ตั้งเวลายิง</strong> (เวลาไทย) หรือกดยิงเดี๋ยวนี้ด้านล่าง</p>
+      <input type="datetime-local" name="blast_at"
+             value="<?php echo esc_attr($sched_at ? date('Y-m-d\TH:i', strtotime($sched_at)) : $default); ?>">
+      <button class="button" name="dl_action" value="schedule" formnovalidate>บันทึกเวลายิง</button>
+      <?php if ($sched_at): ?>
+        <p style="color:#0F766E;margin:8px 0 0">
+          ตั้งไว้: <strong><?php echo esc_html(date('d/m/Y H:i', strtotime($sched_at))); ?> น.</strong>
+          — กลุ่ม <?php echo esc_html(implode(', ', $sched_seg)); ?>
+          <?php echo Dogology_Learning_Survey_Blast::scheduled_email() ? '(ส่งอีเมลด้วย)' : '(LINE เท่านั้น)'; ?>
+          <button class="button-link" name="dl_action" value="unschedule" formnovalidate
+                  style="color:#b32d2e;margin-left:8px">ยกเลิก</button>
+        </p>
+        <?php if (Dogology_Learning_Survey::test_mode()): ?>
+          <p style="color:#b32d2e;margin:6px 0 0"><strong>โหมดทดสอบเปิดอยู่ — ระบบจะไม่ยิงตามเวลาที่ตั้งไว้ ปิดก่อนครับ</strong></p>
+        <?php endif; ?>
+      <?php endif; ?>
+      <?php $last = get_option('dogology_learning_survey_blast_last', ''); if ($last): ?>
+        <p style="color:#666;margin:6px 0 0">ครั้งล่าสุด: <?php echo esc_html($last); ?></p>
+      <?php endif; ?>
+
+      <p style="margin:16px 0 6px"><strong>หรือยิงเดี๋ยวนี้</strong></p>
       <button class="button button-primary">เข้าคิวและเริ่มส่ง</button>
       <?php if ($failed): ?>
         <button class="button" name="dl_action" value="retry"

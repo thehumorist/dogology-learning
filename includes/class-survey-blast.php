@@ -26,6 +26,14 @@ class Dogology_Learning_Survey_Blast
     const OPT_AUTO     = 'dogology_survey_auto_send';
     const OPT_DELAY_H  = 'dogology_survey_auto_delay_hours';
 
+    /* Scheduled launch. Site-local datetime + the exact audience, so the
+       operator can set it once and walk away instead of being at a keyboard
+       at 19:00 on a Wednesday. */
+    const SCHED_HOOK   = 'dogology_survey_scheduled_launch';
+    const OPT_SCHED_AT = 'dogology_learning_survey_blast_at';
+    const OPT_SCHED_SEG= 'dogology_learning_survey_blast_segments';
+    const OPT_SCHED_EM = 'dogology_learning_survey_blast_email';
+
     public static function table() { global $wpdb; return $wpdb->prefix . 'dogology_survey_invites'; }
 
     public static function install()
@@ -67,6 +75,92 @@ class Dogology_Learning_Survey_Blast
         if (!wp_next_scheduled(self::AUTO_HOOK)) {
             wp_schedule_event(time() + 600, 'hourly', self::AUTO_HOOK);
         }
+
+        add_action(self::SCHED_HOOK, array(__CLASS__, 'run_scheduled'));
+        // Also checked on the hourly scan: if a single event is ever lost (a
+        // missed cron, a plugin reactivation), the launch still happens rather
+        // than silently never firing.
+        add_action(self::AUTO_HOOK, array(__CLASS__, 'run_scheduled'));
+    }
+
+    /* ------------------------------------------------------------------
+     * Scheduled launch
+     * ---------------------------------------------------------------- */
+
+    /** @return string '' or 'Y-m-d H:i:s' in SITE time. */
+    public static function scheduled_at() { return (string) get_option(self::OPT_SCHED_AT, ''); }
+    public static function scheduled_segments()
+    {
+        $v = get_option(self::OPT_SCHED_SEG, '');
+        return array_values(array_filter(array_map('sanitize_key', explode(',', (string) $v))));
+    }
+    public static function scheduled_email() { return get_option(self::OPT_SCHED_EM, '1') === '1'; }
+
+    /**
+     * @param string $when_site  'Y-m-d H:i' in SITE time (what the operator typed).
+     * @return array{ok:bool,error?:string,at?:string}
+     */
+    public static function schedule_launch($when_site, array $segments, $use_email = true)
+    {
+        $segments = array_values(array_filter(array_map('sanitize_key', $segments)));
+        if (!$segments) return array('ok' => false, 'error' => 'ยังไม่ได้เลือกกลุ่มผู้รับ');
+
+        $ts = strtotime($when_site);
+        if (!$ts) return array('ok' => false, 'error' => 'รูปแบบวันเวลาไม่ถูกต้อง');
+
+        // The operator types site time; cron works in UTC.
+        $utc = $ts - (int) (get_option('gmt_offset') * HOUR_IN_SECONDS);
+        if ($utc <= time()) return array('ok' => false, 'error' => 'เวลาที่ตั้งอยู่ในอดีตแล้ว');
+
+        self::cancel_scheduled();
+        update_option(self::OPT_SCHED_AT,  gmdate('Y-m-d H:i:s', $ts), false);
+        update_option(self::OPT_SCHED_SEG, implode(',', $segments), false);
+        update_option(self::OPT_SCHED_EM,  $use_email ? '1' : '0', false);
+        wp_schedule_single_event($utc, self::SCHED_HOOK);
+
+        return array('ok' => true, 'at' => gmdate('Y-m-d H:i', $ts));
+    }
+
+    public static function cancel_scheduled()
+    {
+        while ($ts = wp_next_scheduled(self::SCHED_HOOK)) {
+            wp_unschedule_event($ts, self::SCHED_HOOK);
+        }
+        delete_option(self::OPT_SCHED_AT);
+        delete_option(self::OPT_SCHED_SEG);
+        delete_option(self::OPT_SCHED_EM);
+    }
+
+    /**
+     * Fire the scheduled blast, if one is due. Clears the schedule FIRST so a
+     * duplicate cron run cannot queue twice — the ledger's UNIQUE key would
+     * catch it anyway, but a scheduled send should be provably one-shot.
+     */
+    public static function run_scheduled()
+    {
+        $at = self::scheduled_at();
+        if (!$at) return;
+        if (strtotime($at) > strtotime(current_time('mysql'))) return; // not due yet
+
+        $segments = self::scheduled_segments();
+        $email    = self::scheduled_email();
+        self::cancel_scheduled();
+        if (!$segments) return;
+
+        // Refuse to launch while the response-wiping test mode is on. Nothing
+        // good happens when a debug switch is live during a real send.
+        if (class_exists('Dogology_Learning_Survey') && Dogology_Learning_Survey::test_mode()) {
+            error_log('[dogology-survey] scheduled blast ABORTED: test mode is on');
+            update_option('dogology_learning_survey_blast_last', 'aborted: test mode was on', false);
+            return;
+        }
+
+        $r = self::queue($segments, 'blast', $email);
+        update_option('dogology_learning_survey_blast_last', sprintf(
+            '%s — queued %d (email %d), skipped %d, unreachable %d [%s]',
+            current_time('mysql'), $r['added'], $r['emailed'], $r['skipped'], $r['noline'],
+            implode(',', $segments)
+        ), false);
     }
 
     public static function auto_enabled()  { return get_option(self::OPT_AUTO, '0') === '1'; }
