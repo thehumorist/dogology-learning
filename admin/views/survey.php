@@ -264,6 +264,8 @@ $fopts   = Dogology_Learning_Survey::options('friction');
         'stalled'     => 'เริ่มแล้วแต่หยุดกลางทาง',
         'not_started' => 'ยังไม่เคยเปิดบทเรียนเลย',
       );
+      // 'active' is deliberately absent: people still working through the
+      // course are never a blast audience.
       foreach ($labels as $seg => $lbl): ?>
         <label style="display:block;margin-bottom:7px">
           <input type="checkbox" name="segments[]" value="<?php echo esc_attr($seg); ?>"

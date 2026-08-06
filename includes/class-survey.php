@@ -33,6 +33,12 @@ class Dogology_Learning_Survey
     const SURVEY_VERSION = 1;
     const COURSE_ID      = 5683;
 
+    /* A student is only "stalled" once BOTH are true: they have not touched
+       the course for a while, and they have owned it long enough to have had
+       a fair chance. See context_for(). */
+    const ACTIVE_IDLE_DAYS  = 14;
+    const ACTIVE_OWNED_DAYS = 21;
+
     /** Plain-language topics shown to students, mapped to the lessons they stand for. */
     public static function topics()
     {
@@ -646,7 +652,36 @@ DLCSS;
             $finished = ($available > 0 && $done >= $available);
         }
 
-        $segment = $finished ? 'finished' : ($pct >= 76 ? 'near' : ($done > 0 ? 'stalled' : 'not_started'));
+        /**
+         * "Stalled" must mean STOPPED, not merely unfinished.
+         *
+         * With no recency test, someone who bought this morning and watched
+         * lesson 1 counted as stalled — and was sent "คอร์สยังค้างอยู่ใช่ไหมครับ /
+         * เวลามีคนหยุดกลางทาง" hours after paying. A person still working
+         * through the course is ACTIVE; there is nothing to ask them yet and
+         * nothing they did wrong.
+         *
+         * Two conditions, because either alone is wrong: someone who bought
+         * long ago but studied yesterday is active, and someone who bought
+         * yesterday and has not opened it since is not stalled either — they
+         * have barely had the chance.
+         */
+        $days_idle = $last  ? floor((time() - strtotime($last))  / DAY_IN_SECONDS) : null;
+        $days_owned= $first ? floor((time() - strtotime($first)) / DAY_IN_SECONDS) : null;
+        $is_active = ($days_idle !== null && $days_idle < self::ACTIVE_IDLE_DAYS)
+                  || ($days_owned !== null && $days_owned < self::ACTIVE_OWNED_DAYS);
+
+        if ($finished) {
+            $segment = 'finished';
+        } elseif ($pct >= 76) {
+            $segment = 'near';
+        } elseif ($is_active) {
+            $segment = 'active';        // never invited: still in the middle of it
+        } elseif ($done > 0) {
+            $segment = 'stalled';
+        } else {
+            $segment = 'not_started';
+        }
 
         return array(
             'user_id'        => (int) $user_id,
@@ -661,7 +696,7 @@ DLCSS;
             'last_activity'  => $last,
             'first_touch'    => $first,
             'segment'        => $segment,
-            'is_unfinished'  => ($segment === 'stalled' || $segment === 'not_started'),
+            'is_unfinished'  => in_array($segment, array('stalled', 'not_started', 'active'), true),
         );
     }
 

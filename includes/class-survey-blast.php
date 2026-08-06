@@ -466,10 +466,12 @@ class Dogology_Learning_Survey_Blast
 
     public static function counts()
     {
-        $c = array('finished' => 0, 'near' => 0, 'stalled' => 0, 'not_started' => 0, 'no_line' => 0);
+        $c = array('finished' => 0, 'near' => 0, 'stalled' => 0, 'not_started' => 0,
+                   'active' => 0, 'no_line' => 0);
         // Per-segment too: a single total does not describe the launch you are
         // about to press, which only ever covers the selected segments.
-        $c['no_line_by_segment'] = array('finished' => 0, 'near' => 0, 'stalled' => 0, 'not_started' => 0);
+        $c['no_line_by_segment'] = array('finished' => 0, 'near' => 0, 'stalled' => 0,
+                                         'not_started' => 0, 'active' => 0);
         $line = self::line_uids();
         foreach (self::audience() as $uid => $ctx) {
             $seg = $ctx['segment'];
