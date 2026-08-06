@@ -165,6 +165,53 @@ class Dogology_Learning_Survey_Blast
         return array('ok' => true, 'at' => gmdate('Y-m-d H:i', $ts));
     }
 
+    /**
+     * The chase, for ONE person. Exists so the path can be exercised end to
+     * end without messaging a real cohort — run_chase() operates on whole
+     * segments, so "just try it once" would have meant a live send to ~100
+     * customers.
+     */
+    public static function chase_user($user_id)
+    {
+        global $wpdb;
+        $user_id = (int) $user_id;
+        $t  = self::table();
+        $rt = Dogology_Learning_Survey::responses_table();
+
+        if ((int) $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM $rt WHERE user_id = %d AND survey_key = %s",
+                $user_id, Dogology_Learning_Survey::SURVEY_KEY))) {
+            return array('ok' => false, 'error' => 'already responded — a chase would never target them');
+        }
+
+        $row = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $t WHERE survey_key = %s AND user_id = %d",
+            Dogology_Learning_Survey::SURVEY_KEY, $user_id));
+        if (!$row)                   return array('ok' => false, 'error' => 'no ledger row — nothing to chase');
+        if ($row->status !== 'sent') return array('ok' => false, 'error' => 'status is ' . $row->status . ', not sent — never actually asked');
+
+        $ctx = Dogology_Learning_Survey::context_for($user_id);
+        if (!$ctx) return array('ok' => false, 'error' => 'no course access');
+
+        // Exactly the two steps run_chase() performs, scoped to one person.
+        $wpdb->delete($t, array('id' => (int) $row->id));
+        $ok = $wpdb->query($wpdb->prepare(
+            "INSERT IGNORE INTO $t
+             (survey_key,user_id,line_uid,email,channel,segment,source,lessons_done_at_send,
+              furthest_position_at_send,status,created_at)
+             VALUES (%s,%d,%s,%s,%s,%s,'chase',%d,%d,'pending',%s)",
+            Dogology_Learning_Survey::SURVEY_KEY, $user_id, $row->line_uid, $row->email,
+            $row->channel, $row->segment, $ctx['lessons_done'], $ctx['furthest_pos'],
+            current_time('mysql')
+        ));
+        if (!$ok) return array('ok' => false, 'error' => 'insert failed: ' . $wpdb->last_error);
+
+        $new_id = (int) $wpdb->insert_id;
+        self::tick();
+        return array('ok' => true, 'cleared_row' => (int) $row->id,
+            'row_after_tick' => $wpdb->get_row($wpdb->prepare("SELECT * FROM $t WHERE id = %d", $new_id), ARRAY_A));
+    }
+
     public static function cancel_chase()
     {
         while ($ts = wp_next_scheduled(self::CHASE_HOOK)) {
