@@ -327,6 +327,131 @@ $fopts   = Dogology_Learning_Survey::options('friction');
   </div>
 
   <!-- ============ RESPONSES ============ -->
+  <?php
+  /* ---------- Single response, in full ----------------------------------
+     The table is a scan view: it shows the fields that fit and drops the
+     multi-selects entirely, so the answers that took the respondent the
+     longest were the ones the operator could not read. */
+  $detail_id = isset($_GET['response']) ? (int) $_GET['response'] : 0;
+  if ($detail_id):
+      $d = $wpdb->get_row($wpdb->prepare(
+          "SELECT r.*, u.display_name, u.email, u.line_uid
+           FROM $rt r LEFT JOIN {$wpdb->prefix}dogology_users u ON u.id = r.user_id
+           WHERE r.id = %d", $detail_id));
+      $back = remove_query_arg('response');
+      if (!$d): ?>
+        <div class="notice notice-error inline"><p>ไม่พบคำตอบนี้</p></div>
+        <p><a href="<?php echo esc_url($back); ?>">&larr; กลับไปหน้ารวม</a></p>
+      <?php else:
+      $rows = $wpdb->get_results($wpdb->prepare(
+          "SELECT question_key, answer_key FROM $at WHERE response_id = %d", $detail_id), ARRAY_A) ?: array();
+      $picked = array();
+      foreach ($rows as $row) $picked[$row['question_key']][] = $row['answer_key'];
+
+      // slug -> Thai label, per question. Stored answers are slugs by design.
+      $label_maps = array(
+          'applied'  => array_map(function ($t) { return $t['label']; }, $topics) + array('none' => 'ยังไม่ได้ลองอะไรเลย'),
+          'liked'    => array_map(function ($t) { return $t['label']; }, $topics),
+          'add'      => Dogology_Learning_Survey::options('add'),
+          'friction' => Dogology_Learning_Survey::options('friction'),
+          'comeback' => Dogology_Learning_Survey::options('comeback'),
+      );
+      $q_titles = array(
+          'applied'  => 'เอาไปใช้จริง',
+          'liked'    => 'ส่วนที่ชอบที่สุด',
+          'add'      => 'อยากให้เพิ่ม / ปรับ',
+          'friction' => 'อะไรทำให้เรียนไม่ต่อเนื่อง',
+          'comeback' => 'อะไรจะทำให้กลับมาเรียนต่อ',
+      );
+      $txt = function ($v) { return $v !== null && $v !== '' ? $v : null; };
+      ?>
+      <div class="dl-card" style="margin-bottom:20px;border:2px solid #00AB8E">
+        <div class="dl-card-header" style="display:flex;justify-content:space-between;align-items:center">
+          <h3 class="dl-card-title">คำตอบของ <?php echo esc_html($d->display_name ?: '(ไม่ระบุ)'); ?></h3>
+          <a class="button" href="<?php echo esc_url($back); ?>">&larr; กลับไปหน้ารวม</a>
+        </div>
+        <div style="padding:18px">
+
+          <p style="margin:0 0 16px;color:#666;font-size:13px">
+            <?php echo esc_html($d->email ?: 'ไม่มีอีเมล'); ?>
+            · <?php echo $d->line_uid ? 'มี LINE' : 'ไม่มี LINE'; ?>
+            · ตอบเมื่อ <?php echo esc_html($d->submitted_at); ?>
+            · student id <?php echo (int) $d->user_id; ?>
+          </p>
+
+          <?php /* Snapshot frozen at submit — never recomputed, so it stays true
+                   even after the curriculum grows. */ ?>
+          <div style="display:flex;gap:22px;flex-wrap:wrap;background:#F8FAFC;border-radius:10px;padding:14px 16px;margin-bottom:18px">
+            <div><strong><?php echo esc_html($d->segment); ?></strong><div style="font-size:11px;color:#888">กลุ่ม ณ ตอนตอบ</div></div>
+            <div><strong><?php echo (int) $d->lessons_done; ?>/<?php echo (int) $d->lessons_total; ?></strong><div style="font-size:11px;color:#888">บทที่เรียนจบ</div></div>
+            <div><strong><?php echo (float) $d->completion_pct; ?>%</strong><div style="font-size:11px;color:#888">ความคืบหน้า</div></div>
+            <div><strong>บทที่ <?php echo (int) $d->furthest_position; ?></strong><div style="font-size:11px;color:#888">ไปไกลสุด</div></div>
+            <div><strong><?php echo $d->days_since_last_activity === null ? '—' : (int) $d->days_since_last_activity; ?></strong><div style="font-size:11px;color:#888">วันตั้งแต่เรียนครั้งล่าสุด</div></div>
+            <div><strong><?php echo $d->days_since_first_touch === null ? '—' : (int) $d->days_since_first_touch; ?></strong><div style="font-size:11px;color:#888">วันตั้งแต่เริ่มเรียน</div></div>
+          </div>
+
+          <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:18px">
+            <div><strong style="color:#f59e0b;font-size:18px"><?php echo $d->star_rating ? str_repeat('★', (int) $d->star_rating) : '—'; ?></strong><div style="font-size:11px;color:#888">ให้คะแนนโดยรวม</div></div>
+            <div><strong style="font-size:18px"><?php echo $d->worth_rating ? (int) $d->worth_rating . '/5' : '—'; ?></strong><div style="font-size:11px;color:#888">ความคุ้มค่า</div></div>
+            <div><strong style="font-size:15px"><?php echo esc_html($d->ebook_choice ?: '—'); ?></strong>
+              <div style="font-size:11px;color:<?php echo $d->ebook_granted_at ? '#16a34a' : '#f59e0b'; ?>">
+                <?php echo $d->ebook_choice ? ($d->ebook_granted_at ? 'ส่งแล้ว ' . esc_html($d->ebook_granted_at) : 'ยังไม่ได้ส่ง') : 'ไม่ได้เลือก'; ?>
+              </div>
+            </div>
+          </div>
+
+          <?php foreach ($q_titles as $qk => $qt):
+            if (empty($picked[$qk])) continue;
+            $map = $label_maps[$qk] ?? array(); ?>
+            <div style="margin-bottom:16px">
+              <div style="font-weight:600;margin-bottom:6px"><?php echo esc_html($qt); ?></div>
+              <?php foreach ($picked[$qk] as $ans): ?>
+                <span style="display:inline-block;background:rgba(0,171,142,.08);color:#0F766E;
+                             border-radius:999px;padding:4px 12px;margin:0 6px 6px 0;font-size:13px">
+                  <?php echo esc_html($map[$ans] ?? $ans); ?></span>
+              <?php endforeach; ?>
+            </div>
+          <?php endforeach; ?>
+
+          <?php
+          $open = array(
+              'แล้วเรื่องไหนได้ผลที่สุด' => $d->best_topic ? (($topics[$d->best_topic]['label'] ?? $d->best_topic)
+                    . ($d->best_reason ? ' — ' . $d->best_reason : '')) : null,
+              'ตอนซื้อคาดหวังอะไร'      => $txt($d->expectation),
+              'ผลลัพธ์กับหมา'           => $txt($d->outcome),
+              'อยากให้เพิ่ม (อื่น ๆ)'    => $txt($d->add_other),
+              'ความเห็นเพิ่มเติม'        => $txt($d->comments),
+          );
+          foreach ($open as $t => $v): if ($v === null) continue; ?>
+            <div style="margin-bottom:14px">
+              <div style="font-weight:600;margin-bottom:4px"><?php echo esc_html($t); ?></div>
+              <div style="background:#fff;border:1px solid #E2E8F0;border-radius:10px;padding:12px 14px;
+                          white-space:pre-wrap;line-height:1.7"><?php echo esc_html($v); ?></div>
+            </div>
+          <?php endforeach; ?>
+
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid #eee">
+            <div style="font-weight:600;margin-bottom:6px">การนำไปเล่าต่อ</div>
+            <?php if ($d->consent_testimonial): ?>
+              <p style="margin:0 0 8px;color:#16a34a">✓ ยินยอมให้นำคำตอบไปใช้เล่าต่อ<?php
+                echo $d->dog_name ? ' — น้อง' . esc_html($d->dog_name) : ''; ?></p>
+              <?php if (!empty($d->photo_attachment_id)):
+                $src = wp_get_attachment_image_url((int) $d->photo_attachment_id, 'medium'); ?>
+                <?php if ($src): ?>
+                  <a href="<?php echo esc_url(wp_get_attachment_url((int) $d->photo_attachment_id)); ?>" target="_blank" rel="noopener">
+                    <img src="<?php echo esc_url($src); ?>" alt="" style="max-width:260px;border-radius:12px">
+                  </a>
+                <?php endif; ?>
+              <?php endif; ?>
+            <?php else: ?>
+              <p style="margin:0;color:#888">ไม่ได้ให้ความยินยอม — ห้ามนำไปเผยแพร่ครับ</p>
+            <?php endif; ?>
+          </div>
+        </div>
+      </div>
+      <?php endif;
+  endif; ?>
+
   <div class="dl-card">
     <div class="dl-card-header"><h3 class="dl-card-title">คำตอบล่าสุด</h3></div>
     <table class="dl-table">
@@ -343,9 +468,12 @@ $fopts   = Dogology_Learning_Survey::options('friction');
       <?php else: foreach ($responses as $r): ?>
         <tr>
           <td>
-            <div><?php echo esc_html($r->display_name ?: '(ไม่ระบุ)'); ?></div>
+            <div><a href="<?php echo esc_url(add_query_arg('response', (int) $r->id)); ?>"><strong><?php
+              echo esc_html($r->display_name ?: '(ไม่ระบุ)'); ?></strong></a></div>
             <div style="font-size:12px;color:#999"><?php echo esc_html($r->email); ?></div>
             <div style="font-size:11px;color:#bbb"><?php echo esc_html($r->submitted_at); ?></div>
+            <a href="<?php echo esc_url(add_query_arg('response', (int) $r->id)); ?>"
+               style="font-size:12px">ดูคำตอบเต็ม &rarr;</a>
           </td>
           <td><span class="dl-badge"><?php echo esc_html($r->segment); ?></span></td>
           <td style="text-align:right">
