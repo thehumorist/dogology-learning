@@ -546,6 +546,7 @@ DLCSS;
             consent_testimonial tinyint(1) NOT NULL DEFAULT 0,
             dog_name varchar(120) DEFAULT NULL,
             photo_attachment_id bigint(20) unsigned DEFAULT NULL,
+            photo_file varchar(191) DEFAULT NULL,
             raw_json longtext,
             submitted_at datetime NOT NULL,
             PRIMARY KEY (id),
@@ -783,6 +784,61 @@ DLCSS;
         return in_array($segment, array('stalled', 'not_started', 'active'), true);
     }
 
+    /**
+     * Where survey photos live: outside the media library, .htaccess-denied,
+     * same posture as the ebook PDFs.
+     *
+     * media_handle_upload() put them in uploads/ with a guessable public URL
+     * and an indexable attachment page. These are photographs of customers'
+     * dogs, sent to a private survey — they should not be fetchable by anyone
+     * who guesses a filename.
+     */
+    public static function photo_dir()
+    {
+        $dir = WP_CONTENT_DIR . '/dogology-survey-photos';
+        if (!file_exists($dir)) wp_mkdir_p($dir);
+        if (!file_exists($dir . '/.htaccess')) {
+            @file_put_contents($dir . '/.htaccess',
+                "Require all denied\n<IfModule !mod_authz_core.c>\nDeny from all\n</IfModule>\n");
+        }
+        if (!file_exists($dir . '/index.php')) {
+            @file_put_contents($dir . '/index.php', "<?php // Silence is golden.\n");
+        }
+        return $dir;
+    }
+
+    /** Admin-only URL that streams a stored survey photo. */
+    public static function photo_url($file)
+    {
+        return add_query_arg(array(
+            'dl_survey_photo' => rawurlencode($file),
+        ), admin_url('admin-post.php?action=dl_survey_photo'));
+    }
+
+    /**
+     * Stream a photo to an ADMIN. No signature scheme: the only audience is
+     * the operator reading responses in wp-admin, so a capability check is
+     * both simpler and stricter than a shareable signed link.
+     */
+    public static function serve_photo()
+    {
+        if (!current_user_can('manage_options')) {
+            status_header(403); exit;
+        }
+        $file = isset($_GET['dl_survey_photo']) ? basename(wp_unslash($_GET['dl_survey_photo'])) : '';
+        $path = self::photo_dir() . '/' . $file;
+        if (!$file || !file_exists($path)) { status_header(404); exit; }
+
+        $type = wp_check_filetype($file);
+        header('Content-Type: ' . ($type['type'] ?: 'application/octet-stream'));
+        header('Content-Length: ' . filesize($path));
+        header('X-Robots-Tag: noindex, nofollow');
+        header('Cache-Control: private, max-age=600');
+        while (ob_get_level() > 0) ob_end_clean();
+        readfile($path);
+        exit;
+    }
+
     /** @return string|null best_topic, only if the student also ticked it in `applied`. */
     protected static function best_topic(array $payload)
     {
@@ -838,19 +894,24 @@ DLCSS;
      * it should never outlive the permission. Without consent the upload is
      * deleted outright rather than kept unreferenced.
      */
-    protected static function own_attachment(array $payload, $user_id)
+    protected static function own_photo(array $payload, $user_id)
     {
-        $id = isset($payload['photo_attachment_id']) ? (int) $payload['photo_attachment_id'] : 0;
-        if ($id <= 0) return null;
+        $file = isset($payload['photo_file']) ? basename((string) $payload['photo_file']) : '';
+        if ($file === '') return null;
 
-        $owner = (int) get_post_meta($id, '_dl_survey_student', true);
-        if ($owner !== (int) $user_id) return null;
+        $path = self::photo_dir() . '/' . $file;
+        if (!file_exists($path)) return null;
 
+        // Ownership is encoded in the filename by handle_photo().
+        if (strpos($file, 's' . (int) $user_id . '-') !== 0) return null;
+
+        // A picture of someone's dog must never outlive the permission to use
+        // it: no consent, the file is deleted rather than kept unreferenced.
         if (empty($payload['consent_testimonial'])) {
-            wp_delete_attachment($id, true);
+            @unlink($path);
             return null;
         }
-        return $id;
+        return $file;
     }
 
     const OPT_TEST_MODE = 'dogology_learning_survey_test_mode';
@@ -973,7 +1034,7 @@ DLCSS;
             'dog_name'                => isset($payload['dog_name']) ? sanitize_text_field((string) $payload['dog_name']) : null,
             // Only honour an attachment this same student uploaded — the id is
             // client-supplied, and without the check any media id would attach.
-            'photo_attachment_id'     => self::own_attachment($payload, $user_id),
+            'photo_file'              => self::own_photo($payload, $user_id),
             'raw_json'                => self::raw_json($payload),
             'submitted_at'            => $now,
         ));
@@ -1317,6 +1378,7 @@ DLCSS;
             exit;
         });
         add_action('rest_api_init', array(__CLASS__, 'register_routes'));
+        add_action('admin_post_dl_survey_photo', array(__CLASS__, 'serve_photo'));
 
         // A rewrite rule added in code is inert until the rules are flushed.
         // Flush once per plugin version rather than on every request.
@@ -1452,23 +1514,31 @@ DLCSS;
             return new WP_REST_Response(array('ok' => false, 'error' => 'not_image'), 400);
         }
 
-        require_once ABSPATH . 'wp-admin/includes/file.php';
-        require_once ABSPATH . 'wp-admin/includes/media.php';
-        require_once ABSPATH . 'wp-admin/includes/image.php';
-
-        $id = media_handle_upload('file', 0, array(
-            'post_title' => 'Survey photo — student ' . (int) $user_id,
-        ), array('test_form' => false));
-        if (is_wp_error($id)) {
-            return new WP_REST_Response(array('ok' => false, 'error' => 'upload_failed',
-                'message' => $id->get_error_message()), 400);
+        // Verify it really is an image by DECODING it, not by trusting the
+        // filename or the client's content-type.
+        $info = @getimagesize($file['tmp_name']);
+        if (!$info || empty($info['mime']) || strpos($info['mime'], 'image/') !== 0) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'not_image'), 400);
         }
-        update_post_meta($id, '_dl_survey_student', (int) $user_id);
+        $ext = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif',
+                     'image/webp' => 'webp', 'image/heic' => 'heic');
+        if (empty($ext[$info['mime']])) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'unsupported_type'), 400);
+        }
 
-        return new WP_REST_Response(array(
-            'ok' => true, 'attachment_id' => (int) $id,
-            'url' => wp_get_attachment_image_url($id, 'thumbnail') ?: wp_get_attachment_url($id),
-        ), 200);
+        // The student id is IN the filename, so ownership can be re-checked at
+        // submit time without a second lookup.
+        $name = 's' . (int) $user_id . '-' . wp_generate_password(20, false, false)
+              . '.' . $ext[$info['mime']];
+        $dest = self::photo_dir() . '/' . $name;
+        if (!@move_uploaded_file($file['tmp_name'], $dest)) {
+            return new WP_REST_Response(array('ok' => false, 'error' => 'upload_failed'), 400);
+        }
+        @chmod($dest, 0640);
+
+        // No URL returned: the page previews the file locally, so a survey
+        // photo never needs a publicly fetchable address at all.
+        return new WP_REST_Response(array('ok' => true, 'file' => $name), 200);
     }
 
     /**

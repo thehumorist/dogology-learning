@@ -391,6 +391,18 @@ $fopts   = Dogology_Learning_Survey::options('friction');
           'comeback' => 'อะไรจะทำให้กลับมาเรียนต่อ',
       );
       $txt = function ($v) { return $v !== null && $v !== '' ? $v : null; };
+      /* Photos moved out of the media library into a protected dir. Rows from
+         before that still hold an attachment id, so render either. */
+      $photo_src = function ($row) {
+          if (!empty($row->photo_file)) {
+              return Dogology_Learning_Survey::photo_url($row->photo_file);
+          }
+          if (!empty($row->photo_attachment_id)) {
+              return wp_get_attachment_image_url((int) $row->photo_attachment_id, 'medium')
+                  ?: wp_get_attachment_url((int) $row->photo_attachment_id);
+          }
+          return '';
+      };
 
       /* Which questions this respondent was ACTUALLY SHOWN. The two paths ask
          different things (see templates/survey.php panel branches), so listing
@@ -492,13 +504,10 @@ $fopts   = Dogology_Learning_Survey::options('friction');
             <?php if ($d->consent_testimonial): ?>
               <p style="margin:0 0 8px;color:#16a34a">✓ ยินยอมให้นำคำตอบไปใช้เล่าต่อ<?php
                 echo $d->dog_name ? ' — น้อง' . esc_html($d->dog_name) : ''; ?></p>
-              <?php if (!empty($d->photo_attachment_id)):
-                $src = wp_get_attachment_image_url((int) $d->photo_attachment_id, 'medium'); ?>
-                <?php if ($src): ?>
-                  <a href="<?php echo esc_url(wp_get_attachment_url((int) $d->photo_attachment_id)); ?>" target="_blank" rel="noopener">
-                    <img src="<?php echo esc_url($src); ?>" alt="" style="max-width:260px;border-radius:12px">
-                  </a>
-                <?php endif; ?>
+              <?php $src = $photo_src($d); if ($src): ?>
+                <a href="<?php echo esc_url($src); ?>" target="_blank" rel="noopener">
+                  <img src="<?php echo esc_url($src); ?>" alt="" style="max-width:260px;border-radius:12px">
+                </a>
               <?php endif; ?>
             <?php elseif (!$was_asked('consent')): ?>
               <p style="margin:0;color:#cbd2d9">ไม่ได้ถาม (กลุ่มที่ยังเรียนไม่จบไม่ถูกถามเรื่องนี้)</p>
@@ -623,13 +632,16 @@ $fopts   = Dogology_Learning_Survey::options('friction');
           </td>
           <td>
             <?php echo $r->consent_testimonial ? '✓ ' . esc_html($r->dog_name) : '—'; ?>
-            <?php if (!empty($r->photo_attachment_id)):
-              $src = wp_get_attachment_image_url((int) $r->photo_attachment_id, 'thumbnail'); ?>
-              <?php if ($src): ?>
-                <a href="<?php echo esc_url(wp_get_attachment_url((int) $r->photo_attachment_id)); ?>" target="_blank" rel="noopener">
-                  <img src="<?php echo esc_url($src); ?>" alt="" style="display:block;width:56px;height:56px;object-fit:cover;border-radius:8px;margin-top:6px">
-                </a>
-              <?php endif; ?>
+            <?php
+            $rsrc = !empty($r->photo_file)
+                ? Dogology_Learning_Survey::photo_url($r->photo_file)
+                : (!empty($r->photo_attachment_id)
+                    ? (wp_get_attachment_image_url((int) $r->photo_attachment_id, 'thumbnail') ?: '')
+                    : '');
+            if ($rsrc): ?>
+              <a href="<?php echo esc_url($rsrc); ?>" target="_blank" rel="noopener">
+                <img src="<?php echo esc_url($rsrc); ?>" alt="" style="display:block;width:56px;height:56px;object-fit:cover;border-radius:8px;margin-top:6px">
+              </a>
             <?php endif; ?>
           </td>
         </tr>

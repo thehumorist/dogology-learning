@@ -544,7 +544,7 @@ for ($i = 1; $i <= 10; $i++) {
                 <span class="ph"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
                 <span id="dogphoto-label">แตะเพื่อเลือกรูป</span>
               </label>
-              <input type="hidden" name="photo_attachment_id" id="photo_attachment_id" value="">
+              <input type="hidden" name="photo_file" id="photo_file" value="">
             </div>
           </div>
         </div>
@@ -584,8 +584,14 @@ for ($i = 1; $i <= 10; $i++) {
         method: 'POST', credentials: 'same-origin', body: fd
       }).then(function (r) { return r.json(); }).then(function (j) {
         if (j && j.ok) {
-          document.getElementById('photo_attachment_id').value = j.attachment_id;
-          document.getElementById('dogphoto-preview').src = j.url;
+          document.getElementById('photo_file').value = j.file;
+          // Preview from the local file: the stored photo has no public URL
+          // by design, so there is nothing to point an <img> at.
+          try {
+            var fr = new FileReader();
+            fr.onload = function (ev) { document.getElementById('dogphoto-preview').src = ev.target.result; };
+            fr.readAsDataURL(f);
+          } catch (e) {}
           lab.parentNode.classList.add('has');
           lab.textContent = 'แตะเพื่อเปลี่ยนรูป';
         } else { lab.textContent = 'อัปโหลดไม่สำเร็จ แตะเพื่อลองใหม่'; }
