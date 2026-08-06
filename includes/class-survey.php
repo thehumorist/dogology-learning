@@ -738,6 +738,37 @@ DLCSS;
     }
 
     /** Persist one submission. Returns response id, or WP_Error. */
+    /**
+     * Grant any response that chose a book and never received one.
+     *
+     * Delivery is best-effort at submit time (a push failure must never fail a
+     * saved response), and an eligibility rule can change under a stored row —
+     * both leave a student holding a promise. Runs hourly so neither becomes
+     * permanent, and it is safe to repeat: grant_ebook() short-circuits on
+     * ebook_granted_at.
+     *
+     * @return int Number granted.
+     */
+    public static function grant_pending()
+    {
+        global $wpdb;
+        $ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM " . self::responses_table() . "
+             WHERE survey_key = %s AND ebook_choice IS NOT NULL AND ebook_choice <> ''
+               AND ebook_granted_at IS NULL LIMIT 50",
+            self::SURVEY_KEY
+        ));
+        $n = 0;
+        foreach ($ids as $rid) {
+            try {
+                if (!is_wp_error(self::grant_ebook((int) $rid))) $n++;
+            } catch (\Throwable $e) {
+                error_log('[dogology-survey] grant_pending failed for ' . (int) $rid . ': ' . $e->getMessage());
+            }
+        }
+        return $n;
+    }
+
     /** @return string|null best_topic, only if the student also ticked it in `applied`. */
     protected static function best_topic(array $payload)
     {
@@ -1004,7 +1035,14 @@ DLCSS;
      * the people who stopped are the ones whose answers we most need. The gate
      * still exists so a response with no legitimate picker can't mint a grant.
      */
-    const EBOOK_SEGMENTS = array('finished', 'near', 'stalled', 'not_started');
+    /**
+     * EVERY segment that can reach the picker must be listed here. The page
+     * shows panel 1 to everyone, so any segment missing from this list gets
+     * shown the book, promised it, and refused — which is exactly what
+     * happened when 'active' was added as a segment and not added here.
+     * If you add a segment, add it here in the same commit.
+     */
+    const EBOOK_SEGMENTS = array('finished', 'near', 'stalled', 'not_started', 'active');
 
     /**
      * Which segment the student was actually SHOWN — the real one, unless a

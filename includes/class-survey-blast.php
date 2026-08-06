@@ -80,6 +80,8 @@ class Dogology_Learning_Survey_Blast
         // Safety net, independent of the auto-send toggle: if the chain ever
         // dies, the hourly scan re-arms a queue that still has work.
         add_action(self::AUTO_HOOK, array(__CLASS__, 'rescue_queue'));
+        // Hourly: hand over any book that was chosen but never delivered.
+        add_action(self::AUTO_HOOK, array('Dogology_Learning_Survey', 'grant_pending'));
         if (!wp_next_scheduled(self::AUTO_HOOK)) {
             wp_schedule_event(time() + 600, 'hourly', self::AUTO_HOOK);
         }
