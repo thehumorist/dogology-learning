@@ -488,7 +488,7 @@ $fopts   = Dogology_Learning_Survey::options('friction');
           <?php endforeach; ?>
 
           <div style="margin-top:18px;padding-top:16px;border-top:1px solid #eee">
-            <div style="font-weight:600;margin-bottom:6px">การนำไปเล่าต่อ</div>
+            <div style="font-weight:600;margin-bottom:6px">รูปน้อง / การนำไปเล่าต่อ</div>
             <?php if ($d->consent_testimonial): ?>
               <p style="margin:0 0 8px;color:#16a34a">✓ ยินยอมให้นำคำตอบไปใช้เล่าต่อ<?php
                 echo $d->dog_name ? ' — น้อง' . esc_html($d->dog_name) : ''; ?></p>
@@ -500,10 +500,16 @@ $fopts   = Dogology_Learning_Survey::options('friction');
                   </a>
                 <?php endif; ?>
               <?php endif; ?>
-            <?php elseif (!$was_asked('consent')): ?>
-              <p style="margin:0;color:#cbd2d9">ไม่ได้ถาม (กลุ่มที่ยังเรียนไม่จบไม่ถูกถามเรื่องนี้)</p>
             <?php else: ?>
-              <p style="margin:0;color:#888">ไม่ได้ให้ความยินยอม — ห้ามนำไปเผยแพร่ครับ</p>
+              <p style="margin:0;color:#b45309"><strong>ไม่ได้ขอความยินยอม — ห้ามนำไปเผยแพร่ครับ</strong><br>
+                <span style="font-size:12px;color:#888">ตั้งแต่ 6 ส.ค. 2026 เราไม่ได้ถามเรื่องการนำไปเล่าต่อแล้ว
+                รูปที่แชร์มาใช้ดูภายในได้ แต่เผยแพร่ไม่ได้ครับ</span></p>
+              <?php if (!empty($d->photo_attachment_id)):
+                $src2 = wp_get_attachment_image_url((int) $d->photo_attachment_id, 'medium'); ?>
+                <?php if ($src2): ?>
+                  <img src="<?php echo esc_url($src2); ?>" alt="" style="max-width:220px;border-radius:12px;margin-top:8px;opacity:.9">
+                <?php endif; ?>
+              <?php endif; ?>
             <?php endif; ?>
           </div>
 

@@ -520,40 +520,35 @@ for ($i = 1; $i <= 10; $i++) {
         <div class="step"><span class="n">ขั้นสุดท้าย</span><h2>ปิดท้าย</h2></div>
         <?php
         /**
-         * The testimonial ask (consent + dog name + photo) is for people who
-         * got something out of the course. Asking someone who stopped at
-         * lesson three to let us tell their story — and to send a photo of
-         * their dog — right after they told us where we failed them reads as
-         * tone-deaf, and would produce testimonials we could not use anyway.
+         * The testimonial ask (consent + dog name + photo) was REMOVED
+         * 2026-08-06 on the operator's instruction. Nothing collected here is
+         * publishable any more, by design.
+         *
+         * The DB columns, the storage code and the admin display are all left
+         * in place so existing consented responses stay readable and usable —
+         * removing the question must not retroactively erase permission that
+         * was already given. To bring it back, restore this block; store() and
+         * own_attachment() still handle both fields.
          */
-        if (!$is_unf): ?>
+        ?>
         <div class="q">
-          <span class="lab">เรื่องของน้องอาจช่วยเจ้าของคนอื่นได้</span>
-          <span class="sub">เจ้าของหลายคนกำลังเจอปัญหาแบบเดียวกับที่คุณเคยเจอ สิ่งที่คุณเล่ามาอาจเป็นสิ่งที่เขากำลังตามหาอยู่ครับ</span>
+          <span class="lab">ขอบคุณที่สละเวลาบอกเราครับ</span>
+          <span class="sub">สิ่งที่คุณเล่ามาจะถูกอ่านจริง ๆ และจะถูกใช้ตัดสินใจว่าจะปรับอะไรก่อนครับ</span>
           <div class="perm">
-            <input class="ci" type="checkbox" name="consent_testimonial" value="1" id="consent"><label class="opt" for="consent" style="margin:0"><i></i><span>ให้ Dogology นำคำตอบไปใช้เล่าต่อได้ เช่น ในเว็บไซต์หรือโซเชียล</span></label>
+            <span class="sub">อยากให้เราเห็นหน้าน้องไหมครับ (ถ้ามี)</span>
+            <input class="ci" type="file" id="dogphoto" name="dog_photo" accept="image/*">
+            <label class="photopick" for="dogphoto">
+              <img id="dogphoto-preview" alt="">
+              <span class="ph"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
+              <span id="dogphoto-label">แตะเพื่อเลือกรูป</span>
+            </label>
+            <input type="hidden" name="photo_attachment_id" id="photo_attachment_id" value="">
             <div style="margin-top:12px">
               <span class="sub">น้องหมาชื่ออะไร</span>
               <input type="text" name="dog_name" placeholder="เช่น ข้าวปั้น">
             </div>
-            <div style="margin-top:12px">
-              <span class="sub">รูปน้อง (ถ้ามี) ใช้เมื่อติ๊กยินยอมด้านบนเท่านั้นครับ</span>
-              <input class="ci" type="file" id="dogphoto" name="dog_photo" accept="image/*">
-              <label class="photopick" for="dogphoto">
-                <img id="dogphoto-preview" alt="">
-                <span class="ph"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></span>
-                <span id="dogphoto-label">แตะเพื่อเลือกรูป</span>
-              </label>
-              <input type="hidden" name="photo_attachment_id" id="photo_attachment_id" value="">
-            </div>
           </div>
         </div>
-        <?php else: ?>
-        <div class="q">
-          <span class="lab">ขอบคุณที่สละเวลาบอกเราครับ</span>
-          <span class="sub">สิ่งที่คุณเล่ามาจะถูกอ่านจริง ๆ และจะถูกใช้ตัดสินใจว่าจะปรับอะไรก่อนครับ</span>
-        </div>
-        <?php endif; ?>
         <p class="fine">ขอบคุณที่สละเวลานะครับ เดี๋ยวเราส่งอีบุ๊กให้ทาง<?php echo $dl_ch; ?>ครับ</p>
       </div>
       <?php $n = $nav(10); dl_srv_nav($n['back'], 0, true); ?>
