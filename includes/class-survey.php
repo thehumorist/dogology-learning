@@ -846,11 +846,10 @@ DLCSS;
         $owner = (int) get_post_meta($id, '_dl_survey_student', true);
         if ($owner !== (int) $user_id) return null;
 
-        // The consent question was removed 2026-08-06, so consent_testimonial
-        // is now always 0. Deleting on "no consent" would therefore destroy
-        // EVERY photo a student shares. The photo is kept; what changes is
-        // that nothing collected from here on may be published — see the note
-        // in templates/survey.php.
+        if (empty($payload['consent_testimonial'])) {
+            wp_delete_attachment($id, true);
+            return null;
+        }
         return $id;
     }
 
