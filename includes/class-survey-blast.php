@@ -141,9 +141,12 @@ class Dogology_Learning_Survey_Blast
     }
 
     /**
-     * Fire the scheduled blast, if one is due. Clears the schedule FIRST so a
-     * duplicate cron run cannot queue twice — the ledger's UNIQUE key would
-     * catch it anyway, but a scheduled send should be provably one-shot.
+     * Fire the scheduled blast, if one is due.
+     *
+     * One-shot is enforced by GET_LOCK plus a re-read inside it, NOT by the
+     * order of statements: an earlier version claimed that clearing the option
+     * first made a double-launch impossible, which was untrue — read and clear
+     * are not atomic, and two workers could pass the due check together.
      */
     public static function run_scheduled()
     {
